@@ -27,11 +27,9 @@ it possible to ask a narrower question than "what does this head do?":
 *what kinds of computations do the weights make available here, and
 where do those capabilities concentrate with depth?*
 
-This is a map-making update with explicit measurement objects,
-validation, and clear failure modes -- not a claim that any specific
-head is "the" cause of a behavior. Weight-space gives us leverage and
-structure; sign and task relevance still require experiments, which is
-why I treat the later causal section as a preview.
+This is a map-making exercise with explicit measurement objects and
+clear failure modes, not a causal claim. Sign and task relevance still
+require experiments, which is why the later causal section is a preview.
 
 ::: {.callout-note appearance="simple"}
 [**Code**](https://github.com/shubhamx64/residual-thoughts-blog/tree/main/code/weight-space-map) -- snapshot of the analysis pipeline accompanying this post.
@@ -42,10 +40,21 @@ why I treat the later causal section as a preview.
 - We map 200 attention heads (layers 1--25 of Gemma-2-2B) using weight-space analysis with SAE decoder directions -- no activations required.
 - **Weight-space maps are reliable in early/mid layers** (local $\rho$ up to 0.82, 144/200 heads show local structure), **but become anti-predictive in late layers** (mean $\rho$ = -0.14 after L17). The overall mean $\rho$ = 0.07 averages out this sign flip.
 - Layer 6 shows an extreme selectivity spike (105$\times$ uniform baseline) -- two orders of magnitude above other layers.
-- Depth-dependent program shifts: early layers carry high SUPPRESS share alongside CROSS_COPY (filtering), mid layers mix CROSS_COPY/SUPPRESS/REINFORCE (composing), late layers lean CROSS_COPY (propagating).
+- Depth-dependent program shifts: early layers carry high SUPPRESS share alongside CROSS_COPY (filtering-like), mid layers mix CROSS_COPY/SUPPRESS/REINFORCE (composing-like), late layers lean CROSS_COPY (propagating-like).
 - Long-range routing structure weakens but persists: 114/200 heads clear $|\rho| \geq 0.10$ at 128--256 tokens, 108/200 at 256+.
 - OV negatives are late-layer outliers, not a layer-wide flip; strongest outlier is L20H7 at -0.64.
 - **Causal preview**: ablating Layer 23 heads *improved* retrieval accuracy by +8.7% -- the map identified a high-leverage layer, but not the sign of its behavioral effect. Full results in Post 2.
+:::
+
+::: {.callout-note}
+## Roadmap: Three Depth Regimes
+The post builds three measurement objects (QK routing, OV writing, feature programs) and validates them against activations. The punchline is that depth organizes attention into three regimes:
+
+1. **Early layers (L1--L5):** feature transport and filtering -- modest selectivity, validated routing, SUPPRESS-heavy programs.
+2. **Mid layers (L6--L12):** a routing bottleneck -- selectivity spikes (Layer 6 at 105$\times$ baseline), the map is most predictive here, strongest validation-confirmed heads cluster.
+3. **Late layers (L17+):** the map becomes anti-predictive at runtime ($\rho$ flips negative) -- still shows structure in weights, but the fixed SAE basis stops being a reliable behavioral proxy.
+
+The sections below build up to this picture. If you want the conclusion first, jump to [Three Depth Regimes](#working-interpretation-three-depth-regimes).
 :::
 
 ## Setup
@@ -112,6 +121,11 @@ late-layer degradation discussed later.
 
 Using the base model avoids instruction-tuning artifacts and keeps the
 focus on the raw attention mechanism.
+
+::: {.callout-note}
+## Feature Subset Note
+The main weight-space metrics (selectivity, program distribution, write archetypes) use a **4,096-feature random subset** of the 16,384 SAE features for computational tractability. Qualitative patterns are stable across seeds. The activation validation run (Sanity Check section) uses the **full 16,384-feature set** with RoPE-aware affinity matrices. When absolute numbers differ between sections, this is usually why.
+:::
 
 ## Weight-Space Object #1: Content-Only Routing in Feature Space
 
@@ -404,8 +418,8 @@ Then we can classify it into a small motif family:
 : Program types and their flow patterns {#tbl-programs}
 
 This is the point where the analysis becomes human-legible: you can say
-"this head implements a lot of CROSS_COPY" or "this layer is
-SUPPRESS-heavy," without running a prompt.
+"this head's weight structure is consistent with CROSS_COPY" or "this layer is
+SUPPRESS-heavy in the weight-space taxonomy," without running a prompt.
 
 In my run: routing tail $\approx$ top 10%; write tail $\approx$ top 20%.
 
@@ -494,7 +508,7 @@ behavior rather than a smooth trend.
 
 ::: {.callout-note}
 ## What Surprised Me
-The Layer 6 spike was the single most dramatic finding -- Sel$\times$U of 105 means the routing structure is two orders of magnitude above uniform baseline. I expected a smooth gradient, not a spike. This showed up consistently across different feature subsets and seeds. Layer 6 is a sliding-window layer (even index) in the range where induction-like heads are typically found, and four of its heads (L6H0, L6H2, L6H3, L6H4) are among the top-10 validation-confirmed heads. The spike-rather-than-gradient pattern suggests a phase transition in routing behavior at this depth.
+The Layer 6 spike was the single most dramatic finding -- Sel$\times$U of 105 means the routing structure is two orders of magnitude above uniform baseline. I expected a smooth gradient, not a spike. This showed up consistently across different feature subsets and seeds. Layer 6 is a sliding-window layer (even index) in the range where induction-like heads are typically found, and four of its heads (L6H0, L6H2, L6H3, L6H4) are among the top-10 validation-confirmed heads. The spike-rather-than-gradient pattern suggests a sharp regime change in routing behavior at this depth.
 :::
 
 ### 3. RoPE Stability Tends to Rise with Depth (with Bands)
@@ -526,7 +540,7 @@ correlation threshold).
 
 ![Within-layer head redundancy (mean Jaccard of top-20 routing pairs) by layer](figs/fig13_redundancy_vs_layer.png){#fig-redundancy}
 
-### Working Interpretation: Three Depth Regimes
+### Working Interpretation: Three Depth Regimes {#working-interpretation-three-depth-regimes}
 
 Taken together, the plots suggest a cleaner story than any single metric
 does on its own:
@@ -579,7 +593,9 @@ Safest takeaways from this weight-space + SAE-basis analysis:
   the Layer 23 ablation result shows the map can identify leverage
   without predicting direction of effect.
 
-## Predictions for Post 2 (Experiments Driven by Weight-Space)
+## Behavioral Follow-Up: Predictions and Early Results
+
+### Pre-Registered Expectations
 
 In Post 2, I will test behavior, but driven by pre-registered
 weight-space predictions.
@@ -590,6 +606,8 @@ RoPE stability could contribute disproportionately to long-distance
 errors on retrieval-style tasks; ablating their OV contribution may
 measurably change accuracy (possibly improve or worsen), especially at
 large distances.
+
+### What Already Came Back
 
 ::: {.callout-important}
 ## Update (Jan 2026): Causal Ablation Results
@@ -672,7 +690,7 @@ copy in practice because it never receives the right input distribution.
 Causal validation (ablation, activation patching) is required to make
 functional claims -- which is why Post 2 is in preparation.
 
-**Single-seed sensitivity.** The main weight-space metrics use a
+**Single-seed sensitivity.** As noted in the Feature Subset Note above, the main weight-space metrics use a
 4,096-feature random subset. Absolute values (e.g., exact Sel$\times$U
 numbers) shift across seeds. Qualitative patterns (which layers spike,
 program distribution shape) are stable in spot checks but have not been
