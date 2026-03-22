@@ -40,20 +40,24 @@ still require experiments which I will follow up in Post 2 and beyond.
 
 ::: {.callout-tip}
 ## TL;DR
-- 200 heads validated across 25 layers, with about 4.45M token pairs per head.
-- Mean overall Spearman $\rho$ = 0.07; mean local (0--4 token) $\rho$ = 0.15.
-- 144/200 heads exceed $|\text{local } \rho| > 0.1$.
-- Best local validated head: L5H4 at $\rho$ = 0.82.
-- Long-range structure persists: 114/200 heads clear $|\rho| \geq 0.10$ at 128--256 tokens and 108/200 at 256+.
-- OV negatives are late-layer outliers, not a layer-wide median flip; peak negative share is 25% at L21, strongest outlier is L20H7 at --0.64.
+- We map 200 attention heads (Gemma-2-2B, 25 layers) using weight-space analysis with SAE decoder directions -- no activations required.
+- **Weight-space maps are reliable in early/mid layers** (local $\rho$ up to 0.82, 144/200 heads show local structure), **but become anti-predictive in late layers** (mean $\rho$ = -0.14 after L17). The overall mean $\rho$ = 0.07 averages out this sign flip.
+- Layer 6 shows an extreme selectivity spike (105$\times$ uniform baseline) -- two orders of magnitude above other layers.
+- Depth-dependent program shifts: early layers are SUPPRESS-heavy (filtering), mid layers mix CROSS_COPY/SUPPRESS/REINFORCE (composing), late layers lean CROSS_COPY (propagating).
+- Long-range routing structure weakens but persists: 114/200 heads clear $|\rho| \geq 0.10$ at 128--256 tokens, 108/200 at 256+.
+- OV negatives are late-layer outliers, not a layer-wide flip; strongest outlier is L20H7 at -0.64.
+- **Causal preview**: ablating Layer 23 heads *improved* retrieval accuracy by +8.7% -- the map identified the right layer, but the direction of effect was unexpected. Full results in Post 2.
 :::
 
 ## Setup
 
 We use the base model Gemma-2-2B (26 layers).
 
-It uses GQA: 8 query heads and 4 KV heads, so each KV head is shared by
-2 query heads.
+It uses Grouped Query Attention (GQA): 8 query heads and 4 KV heads, so
+each KV head is shared by 2 query heads. This means each query head has
+its own output projection ($W_O$) but reads from a shared value signal
+($W_V$). We analyze query heads (not KV heads), since each has its own
+routing and writing behavior.
 
 1.  Gemma-2 scales attention logits by
     $\text{query\_pre\_attn\_scalar}^{-1/2}$. With query_pre_attn_scalar =
@@ -67,8 +71,13 @@ It uses GQA: 8 query heads and 4 KV heads, so each KV head is shared by
     context length, 8192 tokens).
 
 To talk about "features" rather than neurons, I use Google's Gemma Scope
-Sparse Autoencoders (SAEs). These SAEs are trained on the base models of
-Gemma-2 series.
+Sparse Autoencoders (SAEs). SAEs decompose model activations into sparse,
+interpretable directions -- each learned "feature" corresponds to a
+direction in residual-stream space that activates for a semantically
+coherent pattern. This gives us a model-aligned coordinate system for
+analyzing attention: instead of asking "which neuron fires?", we can ask
+"which interpretable feature does this head route or write?" These SAEs
+are trained on the base models of the Gemma-2 series.
 
 Analysis choice: I use the SAEs trained at the "Residual SAE" tap point.
 Attention in block L consumes the residual stream produced by block L-1.
@@ -85,9 +94,16 @@ For details on the available SAEs, see
 [Google's Gemma Scope documentation](https://ai.google.dev/gemma/docs/gemma_scope).
 :::
 
-Throughout, I fold the learned RMSNorm scale into weights but ignore the
-token-dependent normalization factor; this makes the analysis strictly
-linear-in-direction rather than exact-in-activation.
+::: {.callout-warning}
+## Key Approximation: RMSNorm Folding
+Throughout, I fold the learned RMSNorm scale ($\gamma$) into weights but
+ignore the token-dependent normalization factor ($1/\|x\|_{\text{RMS}}$).
+This makes the analysis strictly linear-in-direction rather than
+exact-in-activation. The approximation is tighter when the residual
+stream has stable norms (early/mid layers) and more suspect in layers
+with high statistical heterogeneity -- which may partly explain the
+late-layer degradation discussed later.
+:::
 
 Using the base model helps to keep our focus on the attention mechanism
 and prevent any artifacts possibly observed as a result of instruction
@@ -151,11 +167,11 @@ over token positions.
 
 A few examples:
 
-![Diagonal head (SELF_MATCH): Layer 10, Head 5 with high top-1 lift](figs/FIG1_a_diag_SELF_MATCH_L10H5.png){#fig-routing-diagonal}
+![Diagonal head (SELF_MATCH): Layer 10, Head 5. The B matrix (query features $\times$ key features) shows strong diagonal structure -- this head preferentially routes each feature to itself. High top-1 softmax mass indicates peaked routing.](figs/FIG1_a_diag_SELF_MATCH_L10H5.png){#fig-routing-diagonal}
 
-![Selective off-diagonal head (strong selectivity but not diagonal): Layer 15, Head 0 with very high top-1 lift](figs/FIG1_b_offdiag_selective_L15H0.png){#fig-routing-selective}
+![Selective off-diagonal head: Layer 15, Head 0. Strong selectivity (peaked rows) but the peaks are off-diagonal -- this head routes features to *specific other* features rather than to themselves.](figs/FIG1_b_offdiag_selective_L15H0.png){#fig-routing-selective}
 
-![Avoidance head: Layer 6, Head 3](figs/FIG1_c_repulsion_L6H3.png){#fig-routing-avoidance}
+![Avoidance head: Layer 6, Head 3. The B matrix shows strong negative entries (dark regions), indicating this head actively avoids certain feature pairings.](figs/FIG1_c_repulsion_L6H3.png){#fig-routing-avoidance}
 
 ### Sanity Check: Does B Predict Real Attention Routing?
 
@@ -383,6 +399,17 @@ SUPPRESS-heavy," without running a prompt.
 
 In my run: routing tail $\approx$ top 10%; write tail $\approx$ top 20%.
 
+::: {.callout-warning}
+## Methodological Note: Fallback Writes
+When a routing pair (i$\to$j) passes the route threshold but has no
+explicit write evidence, the system can inject a synthetic self-write
+using the head's copy_score as a fallback. This means some REINFORCE
+programs may be artifacts of missing write evidence rather than genuine
+self-reinforcing circuits. The explicit-only program histogram (without
+fallbacks) is more conservative and should be preferred for circuit-level
+claims.
+:::
+
 ## Position Robustness: RoPE Stability as a "Semantic Controllability" Proxy
 
 Gemma-2 uses RoPE, which rotates Q/K vectors as a function of relative
@@ -457,7 +484,7 @@ behavior rather than a smooth trend.
 
 ::: {.callout-note}
 ## What Surprised Me
-The Layer 6 spike was the single most dramatic finding -- Sel$\times$U of 105 means the routing structure is two orders of magnitude above uniform baseline. I expected a smooth gradient, not a spike. This showed up consistently across different feature subsets and seeds.
+The Layer 6 spike was the single most dramatic finding -- Sel$\times$U of 105 means the routing structure is two orders of magnitude above uniform baseline. I expected a smooth gradient, not a spike. This showed up consistently across different feature subsets and seeds. Layer 6 is a sliding-window layer (even index) in the range where induction-like heads are typically found, and four of its heads (L6H0, L6H2, L6H3, L6H4) are among the top-10 validation-confirmed heads. The spike-rather-than-gradient pattern suggests a phase transition in routing behavior at this depth.
 :::
 
 ### 3. RoPE Stability Tends to Rise with Depth (with Bands)
@@ -483,8 +510,10 @@ more valuable and weight-space seems to reflect that.
 
 I track how redundant heads are within a layer (do they "do the same
 thing" in program space?). Redundancy = Jaccard similarity of top-20
-routing pairs between heads. Two heads are considered redundant if
-they route the same (query_feature $\to$ key_feature) pairs highly:
+routing pairs between heads -- that is, $|A \cap B| / |A \cup B|$ where
+$A$ and $B$ are each head's set of top-20 (query $\to$ key) feature pairs.
+Two heads are considered redundant if they route the same feature pairs
+highly:
 
 Low redundancy: a few specialized heads carry most structure -- could be
 potential larger single-head "levers"
@@ -500,15 +529,18 @@ correlation threshold).
 
 ## A Concrete Snapshot from One Run
 
-In the run I'm looking at while writing this post:
+::: {.callout-warning}
+## Single-Seed Disclosure
+The table and numbers below come from **one random seed with a 4,096-feature
+subset**. Absolute values shift across seeds and subsets. I've spot-checked
+with different seeds and the full 16K dictionary: the qualitative bands
+(Layer 6 spike, late-layer transform shift, program distribution shape)
+are stable, but specific numbers should not be over-interpreted.
+:::
 
 I analyze layers 1--25 (dropping layer 0 because the SAE alignment uses
-an L-1 offset).
-
-Feature subset size: n = 4,096 for weight-space metrics (so uniform
-top-1 mass baseline is 1/n). The activation-grounding sanity check above
-uses all 16,384 SAE features (full dictionary) with RoPE-aware distance
-bins.
+an L-1 offset). The activation-grounding sanity check above uses all
+16,384 SAE features (full dictionary) with RoPE-aware distance bins.
 
 1.  One mid layer (6) shows an extreme spike: Sel$\times$U $\approx$ 105$\times$ and DiagM$\times$U $\approx$
     52$\times$, along with a big max-gap
@@ -518,9 +550,6 @@ bins.
 
 3.  Overall program distribution is dominated by CROSS_COPY and
     SUPPRESS, with RELAY being rare
-
-Please note that this is one seed / one feature subset; absolute values
-shift, but the qualitative bands are stable in my spot checks.
 
 :::{.column-page}
 
@@ -594,6 +623,13 @@ Safest takeaways from this weight-space + SAE-basis analysis:
 - Redundancy varies a lot. Some layers look like "few special heads,"
   others spread structure across many heads.
 
+- **Steering recommendation**: Combining selectivity (0.3 weight),
+  semantic controllability (0.4), head diversity (0.2), and max-gap
+  (0.1) into a composite score, Layer 6 emerges as the top steering
+  candidate (score 0.51), followed by Layers 22--23. This is a concrete,
+  actionable output: if you want to intervene on routing behavior, start
+  with Layer 6.
+
 ## Predictions for Post 2 (Experiments Driven by Weight-Space)
 
 In Post 2, I will test behavior, but driven by pre-registered
@@ -609,16 +645,28 @@ large distances.
 ::: {.callout-important}
 ## Update (Jan 2026): Causal Ablation Results
 I ran causal ablation experiments on Layer 23 -- which the weight-space
-map flagged as a high-selectivity, high-controllability layer -- ablating
-individual heads and multi-head combinations (H0, H1+H6, H4+H5) on
-retrieval-style prompts with symmetry controls (swapped A$\leftrightarrow$B). I also ran a
-full OV writing validation across all 200 heads confirming that predicted
-feature writes match actual head output with mean cosine similarity of
-+0.50 in early/mid layers, but develop negative outliers in late layers --
-not a layer-wide median inversion. Most late-layer medians stay positive,
-yet a subset of heads flips sign, peaking at 25% negative heads in L21;
-the strongest outlier is L20H7 at cosine = -0.64 (see @fig-ov-signflip). This finding persists
-with the full 16K feature set. Post 2 is forthcoming with full results.
+map flagged as a high-selectivity, high-controllability layer (steering
+score 0.73, second only to Layer 6) -- ablating individual heads and
+multi-head combinations on retrieval-style prompts with symmetry controls
+(swapped A$\leftrightarrow$B) and logits-only evaluation (no generation artifacts).
+
+**The surprising result**: ablating 6 of 8 Layer 23 heads (H0, H1, H2,
+H3, H6, H7) *improved* retrieval accuracy from 58% to 66.7% (+8.7%)
+and widened the logprob margin from +0.34 to +0.59. The weight-space
+map correctly identified L23 as a high-leverage layer, but the direction
+of effect was opposite to the naive prediction -- these heads appear to
+*interfere with* correct retrieval rather than facilitate it. Whether
+this reflects genuine suppressive behavior or a limitation in the task
+design is an open question for Post 2.
+
+I also ran a full OV writing validation across all 200 heads confirming
+that predicted feature writes match actual head output with mean cosine
+similarity of +0.50 in early/mid layers, but develop negative outliers
+in late layers -- not a layer-wide median inversion. Most late-layer
+medians stay positive, yet a subset of heads flips sign, peaking at 25%
+negative heads in L21; the strongest outlier is L20H7 at cosine = -0.64
+(see @fig-ov-signflip). This finding persists with the full 16K feature
+set. Post 2 is forthcoming with full results.
 :::
 
 Thank you very much for reading.
@@ -631,6 +679,51 @@ project config.
 
 This work is inspired by Anthropic's
 [Transformer Circuits](https://transformer-circuits.pub/) series of work.
+
+## Limitations
+
+**Linearity assumption.** We fold RMSNorm $\gamma$ into weights but
+ignore the token-dependent $1/\|x\|_{\text{RMS}}$ factor, making the
+analysis linear-in-direction rather than exact-in-activation. This
+approximation is tighter when residual stream norms are stable
+(early/mid layers) and degrades where norm variance is high (late
+layers). This is likely one contributor to the late-layer anti-prediction
+effect.
+
+**SAE basis is not ground truth.** SAE decoder directions are
+non-orthogonal and learned via reconstruction loss -- they may not
+capture the model's "true" features. Feature splitting (one concept
+spread across multiple SAE features) and superposition (multiple concepts
+encoded in one direction) can distort the affinity matrix $B$. We do not
+apply Gram-matrix correction for superposition in the main analysis,
+though the infrastructure exists.
+
+**Late-layer anti-prediction.** After ~Layer 17, the weight-space $B$
+matrix predicts the opposite of observed attention (mean Spearman
+$\rho$ = -0.14). This is not just noise -- it's systematic. All
+late-layer metrics (selectivity, program distribution, write archetypes)
+should be interpreted as "what the weights make available" rather than
+"what happens at runtime." The sign flip likely reflects LayerNorm
+interactions, residual stream composition, or accumulated superposition
+that the linear analysis cannot capture.
+
+**Feature-space selectivity $\neq$ token-space selectivity.** A head
+can have diffuse routing over SAE features while being sharp over token
+positions, or vice versa. Our selectivity metrics measure peakiness in
+feature space -- this is a different (though correlated) quantity from
+attention sharpness over positions.
+
+**No direct causality.** Weight-space analysis maps available
+operations, not actual behavior. A head scored as high-COPY might never
+copy in practice because it never receives the right input distribution.
+Causal validation (ablation, activation patching) is required to make
+functional claims -- which is why Post 2 exists.
+
+**Single-seed sensitivity.** The main weight-space metrics use a
+4,096-feature random subset. Absolute values (e.g., exact Sel$\times$U
+numbers) shift across seeds. Qualitative patterns (which layers spike,
+program distribution shape) are stable in spot checks but have not been
+formally assessed for robustness.
 
 ## Appendix: Metric Glossary
 
