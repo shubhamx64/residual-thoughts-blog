@@ -33,6 +33,10 @@ head is "the" cause of a behavior. Weight-space gives us leverage and
 structure; sign and task relevance still require experiments, which is
 why I treat the later causal section as a preview.
 
+::: {.callout-note appearance="simple"}
+[**Code**](https://github.com/shubhamx64/residual-thoughts-blog/tree/main/code/weight-space-map) -- snapshot of the analysis pipeline accompanying this post.
+:::
+
 ::: {.callout-tip}
 ## TL;DR
 - We map 200 attention heads (layers 1--25 of Gemma-2-2B) using weight-space analysis with SAE decoder directions -- no activations required.
@@ -625,7 +629,7 @@ especially [A Mathematical Framework for Transformer Circuits](https://transform
 
 Code for the analysis pipeline is available in the
 [code/weight-space-map](https://github.com/shubhamx64/residual-thoughts-blog/tree/main/code/weight-space-map)
-directory of this site's repository.
+directory of this site's repository (experimental research code snapshot).
 
 Feedback, comments, and discussion are welcome.
 
