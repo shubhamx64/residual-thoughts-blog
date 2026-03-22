@@ -1,9 +1,0 @@
----
-title: "Posts"
-listing:
-  contents: .
-  sort: "date desc"
-  type: default
-  fields: [title, date, categories]
----
-

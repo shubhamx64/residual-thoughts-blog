@@ -6,6 +6,8 @@ website:
   site-url: "https://www.residual-thoughts.com"
   navbar:
     left: []
+  open-graph: true
+  twitter-card: true
   page-footer:
     left: "&copy; 2025–2026 Residual Thoughts"
     center: "Notes on mechanistic interpretability, geometry, and model behavior."

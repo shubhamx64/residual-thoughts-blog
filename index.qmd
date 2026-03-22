@@ -4,7 +4,7 @@ listing:
   contents: posts
   sort: "date desc"
   type: default
-  fields: [title, date, categories]
+  fields: [title, description, date, categories]
 ---
 
 Notes on mechanistic interpretability, geometry, and model behavior.
