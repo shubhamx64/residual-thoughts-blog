@@ -5,13 +5,7 @@ website:
   title: "Residual Thoughts"
   site-url: "https://www.residual-thoughts.com"
   navbar:
-    left:
-      - href: index.qmd
-        text: Home
-      - href: about.qmd
-        text: About
-      - text: Posts
-        href: posts/index.qmd
+    left: []
   page-footer:
     left: "&copy; 2025–2026 Residual Thoughts"
     center: "Notes on mechanistic interpretability, geometry, and model behavior."
