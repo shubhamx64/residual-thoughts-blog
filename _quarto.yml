@@ -4,6 +4,7 @@
 website:
   title: "Residual Thoughts"
   site-url: "https://www.residual-thoughts.com"
+  favicon: favicon.png
   navbar:
     left: []
   open-graph: true

@@ -3,7 +3,7 @@ title: "A Weight-Space Map of Attention Heads in Gemma-2 (with SAEs)"
 subtitle: "Lab notes on mechanistic interpretability without activations"
 author: "shubhamx64"
 date: "2026-01-02"
-last-modified: "2026-03-22"
+date-modified: "2026-03-22"
 categories: [mechanistic-interpretability, gemma-2, sae, attention-heads]
 description: "Can we learn something useful about attention heads without sampling new activations? This post uses Gemma-2 2B and Gemma Scope residual-stream SAEs to build a weight-space map of routing and writing behavior."
 image: figs/hero.png
@@ -38,7 +38,7 @@ why I treat the later causal section as a preview.
 - We map 200 attention heads (layers 1--25 of Gemma-2-2B) using weight-space analysis with SAE decoder directions -- no activations required.
 - **Weight-space maps are reliable in early/mid layers** (local $\rho$ up to 0.82, 144/200 heads show local structure), **but become anti-predictive in late layers** (mean $\rho$ = -0.14 after L17). The overall mean $\rho$ = 0.07 averages out this sign flip.
 - Layer 6 shows an extreme selectivity spike (105$\times$ uniform baseline) -- two orders of magnitude above other layers.
-- Depth-dependent program shifts: early layers are SUPPRESS-heavy (filtering), mid layers mix CROSS_COPY/SUPPRESS/REINFORCE (composing), late layers lean CROSS_COPY (propagating).
+- Depth-dependent program shifts: early layers carry high SUPPRESS share alongside CROSS_COPY (filtering), mid layers mix CROSS_COPY/SUPPRESS/REINFORCE (composing), late layers lean CROSS_COPY (propagating).
 - Long-range routing structure weakens but persists: 114/200 heads clear $|\rho| \geq 0.10$ at 128--256 tokens, 108/200 at 256+.
 - OV negatives are late-layer outliers, not a layer-wide flip; strongest outlier is L20H7 at -0.64.
 - **Causal preview**: ablating Layer 23 heads *improved* retrieval accuracy by +8.7% -- the map identified a high-leverage layer, but not the sign of its behavioral effect. Full results in Post 2.
@@ -545,7 +545,7 @@ I think this is the most important qualitative insight in the post. The
 headline is not just that certain layers spike, but that the *kind* of
 structure the map is surfacing changes with depth.
 
-The program distribution by layer (@fig-program-dist) makes this concrete: early layers are suppress-heavy, mid layers mix CROSS_COPY / SUPPRESS / REINFORCE, and late layers tilt back toward CROSS_COPY. The dominant program motif changes with depth even when the global histogram looks stable.
+The program distribution by layer (@fig-program-dist) makes this concrete: early layers carry substantial SUPPRESS (peaking in L2/L4–L6) alongside CROSS_COPY, mid layers mix CROSS_COPY / SUPPRESS / REINFORCE, and late layers tilt toward CROSS_COPY. The dominant program motif changes with depth even when the global histogram looks stable.
 
 ![Weight-space program distribution by layer](figs/fig06_program_distribution.png){#fig-program-dist}
 
