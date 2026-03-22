@@ -1,10 +1,10 @@
 ---
 title: "A Weight-Space Map of Attention Heads in Gemma-2 (with SAEs)"
-subtitle: "Lab notes on mechanistic interpretability without activations"
+subtitle: "Mechanistic interpretability from weights plus a fixed SAE basis"
 date: "2026-01-02"
 last-modified: "2026-03-22"
 categories: [mechanistic-interpretability, gemma-2, sae, attention-heads]
-description: "Can we gain insights about induction heads without sampling from the underlying LLM? In this writeup, we explore this question with help of Gemma-2 2B and Gemma Scope SAEs trained on the residual stream."
+description: "Can we learn something useful about attention heads without sampling new activations? This post uses Gemma-2 2B and Gemma Scope residual-stream SAEs to build a weight-space map of routing and writing behavior."
 image: figs/hero.png
 toc-depth: 3
 ---
@@ -16,27 +16,28 @@ Originally published January 2, 2026. Migrated from Wix Studio and updated March
 
 ![](figs/hero.png)
 
-In this post, I use model weights plus a fixed SAE feature basis trained
-beforehand, to map what kinds of routing and writing patterns are
-available inside attention heads (i.e., what the head's linear maps make
-possible in this fixed SAE coordinate system, not what it necessarily
-uses on typical tokens) without collecting new activations or running
-generation. This allows us to study what a given attention head linearly
-implements in this feature basis.
+This post uses model weights plus a fixed SAE feature basis to map what
+kinds of routing and writing patterns are available inside Gemma-2
+attention heads. The emphasis is on *available linear structure* in a
+shared feature coordinate system, not on claiming that a head uses that
+structure on typical tokens.
 
-I'll show the core measurement objects, then use them to build a
-depth-wise "map" of head behavior in Gemma-2: how sliding vs global
-attention layers seem to differ, how routing sharpness and
-identity-sensitivity evolve with depth, and how write behavior shifts
-from early to late layers.
+The payoff is a depth-wise map of head behavior without collecting new
+activations or running generation for the main analysis. That map makes
+it possible to ask a narrower and more publishable question than "what
+does this head do?": *what kinds of computations do the weights make
+available here, and where do those capabilities concentrate with
+depth?*
 
-What this post is: a "map-making" update. Readable, falsifiable.
+What this post is: a map-making update with explicit measurement
+objects, validation, and clear failure modes.
 
 What this post is not: a claim that any specific head is "the" cause of
-a specific behavior.
+a behavior.
 
-Weight-space gives us leverage + structure; sign and task relevance
-still require experiments which I will follow up in Post 2 and beyond.
+Weight-space gives us leverage and structure; sign, deployment, and task
+relevance still require experiments, which is why I treat the later
+causal section as a preview rather than a full answer.
 
 ::: {.callout-tip}
 ## TL;DR
@@ -46,7 +47,7 @@ still require experiments which I will follow up in Post 2 and beyond.
 - Depth-dependent program shifts: early layers are SUPPRESS-heavy (filtering), mid layers mix CROSS_COPY/SUPPRESS/REINFORCE (composing), late layers lean CROSS_COPY (propagating).
 - Long-range routing structure weakens but persists: 114/200 heads clear $|\rho| \geq 0.10$ at 128--256 tokens, 108/200 at 256+.
 - OV negatives are late-layer outliers, not a layer-wide flip; strongest outlier is L20H7 at -0.64.
-- **Causal preview**: ablating Layer 23 heads *improved* retrieval accuracy by +8.7% -- the map identified the right layer, but the direction of effect was unexpected. Full results in Post 2.
+- **Causal preview**: ablating Layer 23 heads *improved* retrieval accuracy by +8.7% -- the map identified a high-leverage layer, but not the sign of its behavioral effect. Full results in Post 2.
 :::
 
 ## Setup
@@ -58,6 +59,12 @@ each KV head is shared by 2 query heads. This means each query head has
 its own output projection ($W_O$) but reads from a shared value signal
 ($W_V$). We analyze query heads (not KV heads), since each has its own
 routing and writing behavior.
+
+One implication is worth keeping in mind later: sister query heads share
+the same value source but can still look very different in the map. When
+that happens, the specialization is unlikely to come from $W_V$ alone; it
+has to be coming from routing ($W_Q/W_K$), the per-head output projection
+($W_O$), or both.
 
 1.  Gemma-2 scales attention logits by
     $\text{query\_pre\_attn\_scalar}^{-1/2}$. With query_pre_attn_scalar =
@@ -72,12 +79,12 @@ routing and writing behavior.
 
 To talk about "features" rather than neurons, I use Google's Gemma Scope
 Sparse Autoencoders (SAEs). SAEs decompose model activations into sparse,
-interpretable directions -- each learned "feature" corresponds to a
-direction in residual-stream space that activates for a semantically
-coherent pattern. This gives us a model-aligned coordinate system for
-analyzing attention: instead of asking "which neuron fires?", we can ask
-"which interpretable feature does this head route or write?" These SAEs
-are trained on the base models of the Gemma-2 series.
+interpretable directions. Each learned "feature" is a direction in
+residual-stream space that tends to activate for a coherent pattern.
+This gives us a model-aligned coordinate system for analyzing
+attention: instead of asking "which neuron fires?", we can ask "which
+interpretable feature does this head route or write?" These SAEs are
+trained on base Gemma-2 models.
 
 Analysis choice: I use the SAEs trained at the "Residual SAE" tap point.
 Attention in block L consumes the residual stream produced by block L-1.
@@ -107,7 +114,7 @@ late-layer degradation discussed later.
 
 Using the base model helps to keep our focus on the attention mechanism
 and prevent any artifacts possibly observed as a result of instruction
-fine tuning.
+fine-tuning.
 
 ## Weight-Space Object #1: Content-Only Routing in Feature Space
 
@@ -182,11 +189,11 @@ runtime attention patterns.
 
 Across 200 heads (25 layers x 8 heads), using all 16,384 SAE features
 and RoPE-aware affinity matrices $B_\Delta$, the activation-grounding run
-covers about 4.45M token pairs per head. Mean overall Spearman $\rho$ is
-0.07 (std 0.21), while mean local (0--4 token) $\rho$ rises to 0.15; 144/200
-heads exceed $|\text{local } \rho| > 0.1$, and the best local head is L5H4 at $\rho$ =
-0.82. The layerwise spread and threshold counts are shown in @fig-validation-box
-and @fig-validation-thresholds.
+covers about 4.45M token pairs per head. The headline result is mixed in
+exactly the way that turned out to matter for interpretation: the map is
+usefully predictive in early and mid layers, but degrades sharply in
+late layers. The layerwise spread and threshold counts are shown in
+@fig-validation-box and @fig-validation-thresholds.
 
 ![Local (0--4 token) Spearman $\rho$ by layer (16K validation)](figs/fig01_local_spearman_box.png){#fig-validation-box}
 
@@ -207,9 +214,7 @@ distance bin by rotating K ($\Delta$ set to the bin center) and applying
 Gemma's tanh softcap, then compared predicted vs runtime attention
 within each distance bin.
 
-Results across 200 heads (25 layers x 8 heads), using all 16,384 SAE
-features (full dictionary) and RoPE-aware affinity matrices $B_\Delta$ per
-distance bin:
+Summary statistics for the same run:
 
 - ~4.5M token pairs per head
 - Mean overall Spearman $\rho$ = 0.07 (std=0.21)
@@ -218,17 +223,21 @@ distance bin:
 - Best local correlation: L5H4 with $\rho$ = 0.82
 - Best overall correlation: L6H4 with $\rho$ = 0.57
 
-An important caveat: the correlation is not uniform across depth. In
+The important caveat is that correlation is not uniform across depth. In
 early layers (L1--L5), 35 of 40 heads show positive overall Spearman $\rho$
 (mean +0.16), and mid layers (L6--L12) are even stronger (47/56 positive,
 mean +0.22). But in late layers (L19--L25), 50 of 56 heads show negative
 overall Spearman (mean -0.14), meaning the weight-space $B$ matrix
 predicts the opposite of the observed attention pattern. This
-degradation likely reflects nonlinear interactions (LayerNorm, residual
-stream composition, or superposition effects) that are not captured by
-the linear SAE decomposition. The weight-space map remains a faithful
-guide in early/mid layers but should be interpreted with caution past
-~Layer 17.
+degradation likely reflects nonlinear interactions or representational
+drift that are not captured by the linear SAE decomposition. My best
+guess is that the fixed residual-stream feature basis becomes a poorer
+proxy for the computation actually being deployed near the top of the
+network, where the model is closer to logits and late residual mixing is
+more consequential. That is an interpretation, not a demonstrated
+mechanism. The weight-space map remains a useful guide in early/mid
+layers but should be treated as a capacity map rather than a behavior
+map past roughly Layer 17.
 
 The distribution is heavy-tailed: many heads are near-zero (diffuse),
 while a smaller set shows strong, structured routing (e.g., best local $\rho$
@@ -341,6 +350,8 @@ A head is classified by whichever score crosses its threshold first
 defaulting to DIFFUSE. I assign a single label using a precedence rule
 (COPY $\to$ TRANSFORM $\to$ BROADCAST $\to$ SUPPRESS $\to$ DIFFUSE). Heads can score
 highly on multiple axes; the label is just meant to be a coarse summary.
+These thresholds are heuristic cutoffs chosen to separate tails in this
+run, not a claim that the taxonomy has canonical boundaries.
 
 In this taxonomy, SUPPRESS means the head routes positively to some key
 feature j, and then the OV write is negatively aligned with a target
@@ -501,8 +512,10 @@ In this run, transform-like write structure is not monotone with
 depth; it concentrates in specific bands. I'll show that
 distribution rather than claiming a smooth trend.
 
-My intuition: late layers are closer to logits, so targeted writes are
-more valuable and weight-space seems to reflect that.
+My working interpretation is that late layers are closer to the unembedding
+and therefore get more value from targeted feature-to-feature rewriting.
+The weight-space map seems to reflect that shift, even if late-layer
+runtime deployment is less faithfully captured by the fixed SAE basis.
 
 ![Write archetype distribution by layer](figs/fig12_archetype_fraction.png){#fig-archetype-fraction}
 
@@ -526,6 +539,31 @@ heads that show structured routing (e.g., above a small selectivity or
 correlation threshold).
 
 ![Within-layer head redundancy (mean Jaccard of top-20 routing pairs) by layer](figs/fig13_redundancy_vs_layer.png){#fig-redundancy}
+
+### Working Interpretation: Three Depth Regimes
+
+Taken together, the plots suggest a cleaner story than any single metric
+does on its own:
+
+1. Early layers mostly look like *feature transport and filtering*.
+   Routing is validated, selectivity is modest, and OV behavior is often
+   suppressive or transform-light.
+
+2. Mid layers, especially the Layer 6 band, look like a *routing
+   bottleneck*. This is where the map is most predictive, selectivity
+   spikes, identity-sensitive routing appears crisply, and several of the
+   strongest validation-confirmed heads cluster.
+
+3. Late layers look more like *targeted rewriting under a less faithful
+   basis*. Write structure becomes more transform-like and
+   cross-copy-heavy, but the QK map becomes anti-predictive at runtime.
+   The natural reading is not "late layers are uninterpretable"; it is
+   "late layers are where this fixed linear feature basis stops being a
+   reliable behavioral proxy."
+
+I think this is the most important qualitative insight in the post. The
+headline is not just that certain layers spike, but that the *kind* of
+structure the map is surfacing changes with depth.
 
 ## A Concrete Snapshot from One Run
 
@@ -601,7 +639,7 @@ The pooled program mix is led by CROSS_COPY and SUPPRESS, but the depth story is
 
 ![Weight-space program distribution by layer](figs/fig06_program_distribution.png){#fig-program-dist}
 
-## What I Think This Means
+## Interpretation
 
 Weight-space analysis is not telling you "what the model will output."
 It's telling you what kinds of operations are available in the weights,
@@ -618,17 +656,19 @@ Safest takeaways from this weight-space + SAE-basis analysis:
 
 - Writes become more transform-like late. Late layers are more likely to
   contain heads whose OV paths implement systematic feature-to-feature
-  rewriting.
+  rewriting, even if the routing side of the map is less behaviorally
+  faithful there.
 
 - Redundancy varies a lot. Some layers look like "few special heads,"
   others spread structure across many heads.
 
-- **Steering recommendation**: Combining selectivity (0.3 weight),
+- **Intervention heuristic**: Combining selectivity (0.3 weight),
   semantic controllability (0.4), head diversity (0.2), and max-gap
-  (0.1) into a composite score, Layer 6 emerges as the top steering
-  candidate (score 0.51), followed by Layers 22--23. This is a concrete,
-  actionable output: if you want to intervene on routing behavior, start
-  with Layer 6.
+  (0.1) into a composite score, Layer 6 emerges as the strongest routing
+  intervention candidate (score 0.51), followed by Layers 22--23. I now
+  view this as a prioritization heuristic rather than a steering claim:
+  the Layer 23 ablation result shows the map can identify leverage
+  without predicting direction of effect.
 
 ## Predictions for Post 2 (Experiments Driven by Weight-Space)
 
@@ -645,8 +685,8 @@ large distances.
 ::: {.callout-important}
 ## Update (Jan 2026): Causal Ablation Results
 I ran causal ablation experiments on Layer 23 -- which the weight-space
-map flagged as a high-selectivity, high-controllability layer (steering
-score 0.73, second only to Layer 6) -- ablating individual heads and
+map flagged as a high-selectivity, high-controllability late layer --
+ablating individual heads and
 multi-head combinations on retrieval-style prompts with symmetry controls
 (swapped A$\leftrightarrow$B) and logits-only evaluation (no generation artifacts).
 
@@ -669,16 +709,16 @@ negative heads in L21; the strongest outlier is L20H7 at cosine = -0.64
 set. Post 2 is forthcoming with full results.
 :::
 
-Thank you very much for reading.
-
-Feedback, comments, and discussion are always welcome!
-
 Implementation detail note: model constants like attention scaling, RoPE
 placement, and alternating sliding-window convention are codified in the
 project config.
 
 This work is inspired by Anthropic's
-[Transformer Circuits](https://transformer-circuits.pub/) series of work.
+[Transformer Circuits](https://transformer-circuits.pub/) series.
+
+Editorial revision for the March 2026 update was assisted by Codex.
+
+Feedback, comments, and discussion are welcome.
 
 ## Limitations
 
