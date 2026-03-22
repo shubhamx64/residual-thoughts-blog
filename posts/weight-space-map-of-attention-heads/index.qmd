@@ -545,77 +545,7 @@ I think this is the most important qualitative insight in the post. The
 headline is not just that certain layers spike, but that the *kind* of
 structure the map is surfacing changes with depth.
 
-## A Concrete Snapshot from One Run
-
-::: {.callout-warning}
-## Single-Seed Disclosure
-The table and numbers below come from **one random seed with a 4,096-feature
-subset**. Absolute values shift across seeds and subsets. I've spot-checked
-with different seeds and the full 16K dictionary: the qualitative bands
-(Layer 6 spike, late-layer transform shift, program distribution shape)
-are stable, but specific numbers should not be over-interpreted.
-:::
-
-I analyze layers 1--25 (dropping layer 0 because the SAE alignment uses
-an L-1 offset). The activation-grounding sanity check above uses all
-16,384 SAE features (full dictionary) with RoPE-aware distance bins.
-
-1.  One mid layer (6) shows an extreme spike: Sel$\times$U $\approx$ 105$\times$ and DiagM$\times$U $\approx$
-    52$\times$, along with a big max-gap
-
-2.  Several later layers also show high selectivity and diagonal mass,
-    but with different redundancy/controllability profiles
-
-3.  Overall program distribution is dominated by CROSS_COPY and
-    SUPPRESS, with RELAY being rare
-
-:::{.column-page}
-
-| Layer | Slide | Sel$\times$U | DiagM$\times$U | MaxGap | RoPE | Copy | Trans |
-|------:|:-----:|------:|--------:|-------:|-----:|-----:|------:|
-| 1 | No | 4.32 | 2.84 | 0.09 | 0.679 | 0.014 | 0.398 |
-| 2 | Yes | 1.86 | 1.00 | 0.06 | 0.630 | -0.050 | 0.390 |
-| 3 | No | 1.70 | 1.20 | 0.07 | 0.629 | 0.006 | 0.474 |
-| 4 | Yes | 1.77 | 1.21 | 0.07 | 0.635 | -0.015 | 0.392 |
-| 5 | No | 1.37 | 1.17 | 0.05 | 0.639 | -0.023 | 0.313 |
-| 6 | Yes | 105.71 | 52.16 | 0.50 | 0.722 | -0.019 | 0.432 |
-| 7 | No | 16.73 | 1.82 | 0.17 | 0.664 | 0.021 | 0.403 |
-| 8 | Yes | 41.62 | 22.16 | 0.41 | 0.728 | 0.011 | 0.324 |
-| 9 | No | 10.25 | 7.04 | 0.24 | 0.690 | 0.026 | 0.308 |
-| 10 | Yes | 11.27 | 9.90 | 0.23 | 0.672 | 0.000 | 0.373 |
-| 11 | No | 4.20 | 3.32 | 0.10 | 0.670 | 0.009 | 0.462 |
-| 12 | Yes | 30.74 | 21.20 | 0.32 | 0.708 | -0.008 | 0.388 |
-| 13 | No | 5.07 | 3.35 | 0.14 | 0.672 | 0.021 | 0.365 |
-| 14 | Yes | 40.48 | 26.68 | 0.34 | 0.732 | 0.003 | 0.510 |
-| 15 | No | 29.71 | 5.98 | 0.20 | 0.658 | 0.027 | 0.446 |
-| 16 | Yes | 24.28 | 15.83 | 0.27 | 0.719 | 0.066 | 0.450 |
-| 17 | No | 10.94 | 8.25 | 0.19 | 0.702 | 0.008 | 0.540 |
-| 18 | Yes | 17.11 | 11.15 | 0.21 | 0.701 | 0.037 | 0.520 |
-| 19 | No | 8.35 | 4.19 | 0.16 | 0.665 | 0.035 | 0.562 |
-| 20 | Yes | 12.38 | 6.85 | 0.21 | 0.682 | 0.010 | 0.505 |
-| 21 | No | 36.92 | 23.91 | 0.28 | 0.650 | 0.057 | 0.520 |
-| 22 | Yes | 52.61 | 20.80 | 0.47 | 0.755 | 0.030 | 0.473 |
-| 23 | No | 51.34 | 19.98 | 0.41 | 0.729 | 0.036 | 0.549 |
-| 24 | Yes | 35.26 | 18.92 | 0.34 | 0.711 | 0.023 | 0.561 |
-| 25 | No | 8.07 | 4.36 | 0.19 | 0.632 | 0.036 | 0.589 |
-
-: Layer summaries (layers 1--25; Slide = sliding-window layer). See [Appendix](#appendix-metric-glossary) for metric definitions. {#tbl-layers}
-
-:::
-
-Identified program distribution across all layers:
-
-- CROSS_COPY: 3758 (40.8%)
-- SUPPRESS: 2943 (31.9%)
-- REINFORCE: 2113 (22.9%)
-- TRANSFORM: 212 (2.3%)
-- SHIFT: 164 (1.8%)
-- RELAY: 31 (0.3%)
-
-::: {.callout-note}
-## Depth Story
-The pooled program mix is led by CROSS_COPY and SUPPRESS, but the depth story is more informative than the global percentages alone. Early layers are suppress-heavy, mid layers are more mixed between CROSS_COPY / SUPPRESS / REINFORCE, and late layers tilt back toward CROSS_COPY. This makes the "map" claim sharper: the dominant program motif changes with depth even when the global histogram looks stable.
-:::
+The program distribution by layer (@fig-program-dist) makes this concrete: early layers are suppress-heavy, mid layers mix CROSS_COPY / SUPPRESS / REINFORCE, and late layers tilt back toward CROSS_COPY. The dominant program motif changes with depth even when the global histogram looks stable.
 
 ![Weight-space program distribution by layer](figs/fig06_program_distribution.png){#fig-program-dist}
 
