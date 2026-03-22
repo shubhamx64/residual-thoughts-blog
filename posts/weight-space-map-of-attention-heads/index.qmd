@@ -1,6 +1,6 @@
 ---
 title: "A Weight-Space Map of Attention Heads in Gemma-2 (with SAEs)"
-subtitle: "Mechanistic interpretability from weights plus a fixed SAE basis"
+subtitle: "Lab notes on mechanistic interpretability without activations"
 date: "2026-01-02"
 last-modified: "2026-03-22"
 categories: [mechanistic-interpretability, gemma-2, sae, attention-heads]
@@ -24,10 +24,9 @@ structure on typical tokens.
 
 The payoff is a depth-wise map of head behavior without collecting new
 activations or running generation for the main analysis. That map makes
-it possible to ask a narrower and more publishable question than "what
-does this head do?": *what kinds of computations do the weights make
-available here, and where do those capabilities concentrate with
-depth?*
+it possible to ask a narrower question than "what does this head do?":
+*what kinds of computations do the weights make available here, and
+where do those capabilities concentrate with depth?*
 
 What this post is: a map-making update with explicit measurement
 objects, validation, and clear failure modes.
@@ -506,20 +505,7 @@ near the top of the network).
 
 ![Mean semantic controllability (RoPE AUC) per layer with $\pm$1 std across heads](figs/fig11_rope_vs_layer.png){#fig-rope-depth}
 
-### 4. Writes Become More Targeted Late in the Network
-
-In this run, transform-like write structure is not monotone with
-depth; it concentrates in specific bands. I'll show that
-distribution rather than claiming a smooth trend.
-
-My working interpretation is that late layers are closer to the unembedding
-and therefore get more value from targeted feature-to-feature rewriting.
-The weight-space map seems to reflect that shift, even if late-layer
-runtime deployment is less faithfully captured by the fixed SAE basis.
-
-![Write archetype distribution by layer](figs/fig12_archetype_fraction.png){#fig-archetype-fraction}
-
-### 5. Redundancy vs Uniqueness (Where Structure Concentrates)
+### 4. Redundancy vs Uniqueness (Where Structure Concentrates)
 
 I track how redundant heads are within a layer (do they "do the same
 thing" in program space?). Redundancy = Jaccard similarity of top-20
@@ -554,12 +540,10 @@ does on its own:
    spikes, identity-sensitive routing appears crisply, and several of the
    strongest validation-confirmed heads cluster.
 
-3. Late layers look more like *targeted rewriting under a less faithful
-   basis*. Write structure becomes more transform-like and
-   cross-copy-heavy, but the QK map becomes anti-predictive at runtime.
-   The natural reading is not "late layers are uninterpretable"; it is
-   "late layers are where this fixed linear feature basis stops being a
-   reliable behavioral proxy."
+3. Late layers still show strong structure in the map, but the QK side
+   becomes anti-predictive at runtime. The natural reading is not "late
+   layers are uninterpretable"; it is "late layers are where this fixed
+   linear feature basis stops being a reliable behavioral proxy."
 
 I think this is the most important qualitative insight in the post. The
 headline is not just that certain layers spike, but that the *kind* of
@@ -654,11 +638,6 @@ Safest takeaways from this weight-space + SAE-basis analysis:
 - There are depth bands with unusually crisp routing (spikes in
   selectivity and sometimes identity-sensitive diagonal mass).
 
-- Writes become more transform-like late. Late layers are more likely to
-  contain heads whose OV paths implement systematic feature-to-feature
-  rewriting, even if the routing side of the map is less behaviorally
-  faithful there.
-
 - Redundancy varies a lot. Some layers look like "few special heads,"
   others spread structure across many heads.
 
@@ -715,8 +694,6 @@ project config.
 
 This work is inspired by Anthropic's
 [Transformer Circuits](https://transformer-circuits.pub/) series.
-
-Editorial revision for the March 2026 update was assisted by Codex.
 
 Feedback, comments, and discussion are welcome.
 
