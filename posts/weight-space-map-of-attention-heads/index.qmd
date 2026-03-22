@@ -1,67 +1,89 @@
 ---
-title: "Post 1 - A weight-space map of attention heads in Gemma-2 (with SAEs)"
+title: "A Weight-Space Map of Attention Heads in Gemma-2 (with SAEs)"
+subtitle: "Lab notes on mechanistic interpretability without activations"
 date: "2026-01-02"
-categories: [mechanistic-interpretability]
 last-modified: "2026-03-22"
+categories: [mechanistic-interpretability, gemma-2, sae, attention-heads]
 description: "Can we gain insights about induction heads without sampling from the underlying LLM? In this writeup, we explore this question with help of Gemma-2 2B and Gemma Scope SAEs trained on the residual stream."
+image: figs/hero.png
+toc-depth: 3
 ---
 
-> Migrated from Wix Studio on 2026-03-22. Minor formatting cleanup applied.
+::: {.callout-note}
+## Provenance
+Originally published January 2, 2026. Migrated from Wix Studio and updated March 2026 with figure re-embedding, table reformatting, and corrections from the full 16k-feature validation run.
+:::
 
-![Post hero image](https://static.wixstatic.com/media/11062b_d9d6aa519ddd49119dc43c77400960f2~mv2.jpg/v1/fill/w_1000,h_563,al_c,q_85,usm_0.66_1.00_0.01/11062b_d9d6aa519ddd49119dc43c77400960f2~mv2.jpg)
+![](figs/hero.png)
 
 In this post, I use model weights plus a fixed SAE feature basis trained
 beforehand, to map what kinds of routing and writing patterns are
-available inside attention heads (i.e., what the head’s linear maps make
-possible in this fixed SAE coordinate system, not what it necessarily
-uses on typical tokens) without collecting new activations or running
+available inside attention heads (i.e., what the head's linear maps make
+possible in this fixed SAE coordinate system, not what it necessarily
+uses on typical tokens) without collecting new activations or running
 generation. This allows us to study what a given attention head linearly
 implements in this feature basis.
 
-I’ll show the core measurement objects, then use them to build a
-depth-wise “map” of head behavior in Gemma-2: how sliding vs global
+I'll show the core measurement objects, then use them to build a
+depth-wise "map" of head behavior in Gemma-2: how sliding vs global
 attention layers seem to differ, how routing sharpness and
 identity-sensitivity evolve with depth, and how write behavior shifts
 from early to late layers.
 
-What this post is: a “map-making” update. Readable, falsifiable.
+What this post is: a "map-making" update. Readable, falsifiable.
 
-What this post is not: a claim that any specific head is “the” cause of
+What this post is not: a claim that any specific head is "the" cause of
 a specific behavior.
 
 Weight-space gives us leverage + structure; sign and task relevance
 still require experiments which I will follow up in Post 2 and beyond.
 
-## SETUP
+::: {.callout-tip}
+## TL;DR
+- 200 heads validated across 25 layers, with about 4.45M token pairs per head.
+- Mean overall Spearman $\rho$ = 0.07; mean local (0--4 token) $\rho$ = 0.15.
+- 144/200 heads exceed $|\text{local } \rho| > 0.1$.
+- Best local validated head: L5H4 at $\rho$ = 0.82.
+- Long-range structure persists: 114/200 heads clear $|\rho| \geq 0.10$ at 128--256 tokens and 108/200 at 256+.
+- OV negatives are late-layer outliers, not a layer-wide median flip; peak negative share is 25% at L21, strongest outlier is L20H7 at --0.64.
+:::
+
+## Setup
 
 We use the base model Gemma-2-2B (26 layers).
 
 It uses GQA: 8 query heads and 4 KV heads, so each KV head is shared by
 2 query heads.
 
-1.  Gemma‑2 scales attention logits by
-    \({query\_pre\_attn\_scalar}^{-1/2}\). With query_pre_attn_scalar =
-    256, we have \(s = \sqrt{\frac{1}{256}} = \frac{1}{16} = 0.0625\).
+1.  Gemma-2 scales attention logits by
+    $\text{query\_pre\_attn\_scalar}^{-1/2}$. With query_pre_attn_scalar =
+    256, we have $s = \sqrt{\frac{1}{256}} = \frac{1}{16} = 0.0625$.
 
-2.  Softcap value: \(c = 50.0 \).
+2.  Softcap value: $c = 50.0$.
 
 3.  Gemma-2 uses sliding window attention in alternating layers starting
     at index 0: even layers are sliding-window with size 4096, odd
-    layers are global (full causal attention up to the model’s max
+    layers are global (full causal attention up to the model's max
     context length, 8192 tokens).
 
-To talk about “features” rather than neurons, I use Google's Gemma Scope
+To talk about "features" rather than neurons, I use Google's Gemma Scope
 Sparse Autoencoders (SAEs). These SAEs are trained on the base models of
 Gemma-2 series.
 
-Analysis choice: I use the SAEs trained at the "Residual SAE" tap point
-from below diagram. Attention in block L consumes the residual stream
-produced by block L−1. Thus, in my runs I use an SAE layer offset (−1)
-so the SAE basis matches what the attention block actually sees. Each
-SAE feature has a decoder direction (a vector in residual space). I’ll
-treat those decoder directions as a convenient, model-aligned basis for
-analysis. Please note that SAE decoder directions are not orthogonal and
-activations are nonnegative.
+Analysis choice: I use the SAEs trained at the "Residual SAE" tap point.
+Attention in block L consumes the residual stream produced by block L-1.
+Thus, in my runs I use an SAE layer offset (-1) so the SAE basis matches
+what the attention block actually sees. Each SAE feature has a decoder
+direction (a vector in residual space). I'll treat those decoder
+directions as a convenient, model-aligned basis for analysis. Please note
+that SAE decoder directions are not orthogonal and activations are
+nonnegative.
+
+::: {.callout-note}
+## Gemma Scope SAEs
+For details on the available SAEs, see
+[Google's Gemma Scope documentation](https://ai.google.dev/gemma/docs/gemma_scope).
+:::
 
 Throughout, I fold the learned RMSNorm scale into weights but ignore the
 token-dependent normalization factor; this makes the analysis strictly
@@ -71,135 +93,120 @@ Using the base model helps to keep our focus on the attention mechanism
 and prevent any artifacts possibly observed as a result of instruction
 fine tuning.
 
-*Fig 1: Available Gemma Scope SAEs*
-
-## WEIGHT-SPACE OBJECT #1: CONTENT-ONLY ROUTING IN FEATURE SPACE
+## Weight-Space Object #1: Content-Only Routing in Feature Space
 
 For a single attention head, I want a matrix that answers:
 
-“If the query looks like feature i, which key-feature j does this head
-prefer?”
+"If the query looks like feature i, which key-feature j does this head
+prefer?"
 
 Let:
 
-- \(D\) be the SAE decoder matrix for a subset of features (shape n ×
-  d_model), one row per feature direction (Convention: I treat decoder
+- $D$ be the SAE decoder matrix for a subset of features (shape $n \times
+  d_{\text{model}}$), one row per feature direction. (Convention: I treat decoder
   directions as row vectors; if you store decoders as columns, transpose
   accordingly.)
 
-- $W_{Q}$, $W_{K}$ be the head’s query/key projection matrices
+- $W_{Q}$, $W_{K}$ be the head's query/key projection matrices
 
 Project decoder directions into Q-space and K-space:
 
-$Q_f = D \cdot W_Q^T$
+$$Q_f = D \cdot W_Q^T$$
 
-$K_f = D \cdot W_K^T$
+$$K_f = D \cdot W_K^T$$
 
 Define the content-only affinity matrix (what attention logits would
-look like if RoPE and masking weren’t present):
+look like if RoPE and masking weren't present):
 
-$B = (Q_f \cdot K_f^T) \cdot s$
+$$B = (Q_f \cdot K_f^T) \cdot s$$
 
-Where \(s = \sqrt{\frac{1}{256}} = \frac{1}{16} = 0.0625\) (Gemma‑2’s
+Where $s = \sqrt{\frac{1}{256}} = \frac{1}{16} = 0.0625$ (Gemma-2's
 attention logit scaling).
 
 Gemma-2 also applies a tanh soft-cap to attention logits; when matching
-the model’s behavior, I apply the same cap:
+the model's behavior, I apply the same cap:
 
-$\text{softcap}(x) = c \cdot \tanh\left(\frac{x}{c}\right)$
+$$\text{softcap}(x) = c \cdot \tanh\left(\frac{x}{c}\right)$$
 
-This \(B\) matrix is the backbone of our routing analysis. From \(B\) we
+This $B$ matrix is the backbone of our routing analysis. From $B$ we
 can define simple, interpretable routing metrics:
 
-- Selectivity (peakiness): per row i, softmax over keys and take max
-  probability; average over i → “top-1 softmax mass”
+- **Selectivity** (peakiness): per row i, softmax over keys and take max
+  probability; average over i -- "top-1 softmax mass"
 
-- Identity sensitivity: how much softmax probability lands on the
-  diagonal entry (i attends to i) → “diagonal softmax mass”
+- **Identity sensitivity**: how much softmax probability lands on the
+  diagonal entry (i attends to i) -- "diagonal softmax mass"
 
-- Max-gap: difference between best key score and runner-up (in logits),
+- **Max-gap**: difference between best key score and runner-up (in logits),
   averaged over rows
 
-- Avoidance: Negative entries in \(B\) indicate low dot-product
+- **Avoidance**: Negative entries in $B$ indicate low dot-product
   affinity. I treat extreme negative tails as a signature of selective
-  exclusion, but it’s not the same thing as suppression unless the
-  \(OV\) path also writes negative feature directions.
+  exclusion, but it's not the same thing as suppression unless the
+  $OV$ path also writes negative feature directions.
 
-Important: rows/cols of \(B\) are SAE features, not tokens. When I
-compute "top‑1 softmax mass", the softmax is over key features j, not
-over token positions..
+Important: rows/cols of $B$ are SAE features, not tokens. When I
+compute "top-1 softmax mass", the softmax is over key features j, not
+over token positions.
 
-Few examples:
+A few examples:
 
-*Fig 2(a): Diagonal head (SELF_MATCH): Layer 10, Head 5 with high top‑1*
-lift]
+![Diagonal head (SELF_MATCH): Layer 10, Head 5 with high top-1 lift](figs/FIG1_a_diag_SELF_MATCH_L10H5.png){#fig-routing-diagonal}
 
-*Fig 2(a): Diagonal head (SELF_MATCH): Layer 10, Head 5 with high top‑1*
-lift
+![Selective off-diagonal head (strong selectivity but not diagonal): Layer 15, Head 0 with very high top-1 lift](figs/FIG1_b_offdiag_selective_L15H0.png){#fig-routing-selective}
 
-*Fig 2(b): Selective off‑diagonal head (strong selectivity but not*
-diagonal): Layer 15, Head 0 with very high top-1 lift]
+![Avoidance head: Layer 6, Head 3](figs/FIG1_c_repulsion_L6H3.png){#fig-routing-avoidance}
 
-*Fig 2(b): Selective off‑diagonal head (strong selectivity but not*
-diagonal): Layer 15, Head 0 with very high top-1 lift
-
-*Fig 2(c): Avoidance head: Layer 6, Head 3*
-
-Sanity check: does B predict real attention routing?
+### Sanity Check: Does B Predict Real Attention Routing?
 
 Although the map in this post is computed purely from weights plus a
-fixed SAE basis, I ran a activation-grounding sanity check to confirm
-that the main routing object (the feature affinity matrix B) predicts
+fixed SAE basis, I ran an activation-grounding sanity check to confirm
+that the main routing object (the feature affinity matrix $B$) predicts
 runtime attention patterns.
 
 Across 200 heads (25 layers x 8 heads), using all 16,384 SAE features
-and RoPE-aware affinity matrices B_delta, the activation-grounding run
-covers about 4.45M token pairs per head. Mean overall Spearman rho is
-0.07 (std 0.21), while mean local (0-4 token) rho rises to 0.15; 144/200
-heads exceed |local rho| > 0.1, and the best local head is L5H4 at rho =
-0.82. The layerwise spread and threshold counts are shown in Fig 2(d)
-and Fig 2(e).
+and RoPE-aware affinity matrices $B_\Delta$, the activation-grounding run
+covers about 4.45M token pairs per head. Mean overall Spearman $\rho$ is
+0.07 (std 0.21), while mean local (0--4 token) $\rho$ rises to 0.15; 144/200
+heads exceed $|\text{local } \rho| > 0.1$, and the best local head is L5H4 at $\rho$ =
+0.82. The layerwise spread and threshold counts are shown in @fig-validation-box
+and @fig-validation-thresholds.
 
-*Fig 2(d):*
+![Local (0--4 token) Spearman $\rho$ by layer (16K validation)](figs/fig01_local_spearman_box.png){#fig-validation-box}
 
-*Fig 2(e):*
+![Heads with $|\text{local } \rho|$ above thresholds by layer](figs/fig02_local_thresholds.png){#fig-validation-thresholds}
 
 For ~25 diverse prompts, I captured the pre-attention residual stream at
 the target layer, encoded it into the same SAE feature subset used in
 the weight-space map, and predicted attention preferences using the
-bilinear form a(t)ᵀ B a(s). For the runtime target, I used log attention
+bilinear form $a(t)^T B\, a(s)$. For the runtime target, I used log attention
 weights. I compute correlations per query row and then average (to avoid
 cross-row normalization artifacts), and I also break correlations out by
 distance bins; log-softmax equals logits up to a per-row constant, so
 rank correlation is meaningful even though each row has its own
 normalization.
 
-To account for RoPE, I also computed RoPE-aware affinity matrices BΔ per
-distance bin by rotating K (Δ set to the bin center) and applying
-Gemma’s tanh softcap, then compared predicted vs runtime attention
+To account for RoPE, I also computed RoPE-aware affinity matrices $B_\Delta$ per
+distance bin by rotating K ($\Delta$ set to the bin center) and applying
+Gemma's tanh softcap, then compared predicted vs runtime attention
 within each distance bin.
 
-Results across 200 heads (25 layers × 8 heads), using all 16,384 SAE
-features (full dictionary) and RoPE-aware affinity matrices B_Δ per
+Results across 200 heads (25 layers x 8 heads), using all 16,384 SAE
+features (full dictionary) and RoPE-aware affinity matrices $B_\Delta$ per
 distance bin:
 
 - ~4.5M token pairs per head
-
-- Mean overall Spearman ρ = 0.07 (std=0.21)
-
-- Mean local (0–4 tokens) Spearman ρ = 0.15 (max=0.82)
-
-- 144 heads (72%) show |local ρ| > 0.1 ('structured' routing)
-
-- Best local correlation: L5H4 with ρ = 0.82
-
-- Best overall correlation: L6H4 with ρ = 0.57
+- Mean overall Spearman $\rho$ = 0.07 (std=0.21)
+- Mean local (0--4 tokens) Spearman $\rho$ = 0.15 (max=0.82)
+- 144 heads (72%) show $|\text{local } \rho| > 0.1$ ('structured' routing)
+- Best local correlation: L5H4 with $\rho$ = 0.82
+- Best overall correlation: L6H4 with $\rho$ = 0.57
 
 An important caveat: the correlation is not uniform across depth. In
-early layers (L1–L5), 35 of 40 heads show positive overall Spearman ρ
-(mean +0.16), and mid layers (L6–L12) are even stronger (47/56 positive,
-mean +0.22). But in late layers (L19–L25), 50 of 56 heads show negative
-overall Spearman (mean −0.14), meaning the weight-space B matrix
+early layers (L1--L5), 35 of 40 heads show positive overall Spearman $\rho$
+(mean +0.16), and mid layers (L6--L12) are even stronger (47/56 positive,
+mean +0.22). But in late layers (L19--L25), 50 of 56 heads show negative
+overall Spearman (mean -0.14), meaning the weight-space $B$ matrix
 predicts the opposite of the observed attention pattern. This
 degradation likely reflects nonlinear interactions (LayerNorm, residual
 stream composition, or superposition effects) that are not captured by
@@ -208,38 +215,49 @@ guide in early/mid layers but should be interpreted with caution past
 ~Layer 17.
 
 The distribution is heavy-tailed: many heads are near-zero (diffuse),
-while a smaller set shows strong, structured routing (e.g., best local ρ
-≈ 0.82). The top 10 heads by overall Spearman (L6H4, L5H4, L3H2, L6H3,
-L8H1, L8H0, L6H2, L8H6, L12H3, L12H2; all ρ > 0.45) cluster in layers
-3–12.
+while a smaller set shows strong, structured routing (e.g., best local $\rho$
+= 0.82). The top 10 heads by overall Spearman (L6H4, L5H4, L3H2, L6H3,
+L8H1, L8H0, L6H2, L8H6, L12H3, L12H2; all $\rho$ > 0.45) cluster in layers
+3--12.
 
-Please note that this doesn’t prove any head is causally responsible for
-a behavior; it just checks that the measurement objects used in the map
+Please note that this doesn't prove any head is causally responsible for
+a behavior; it just checks that the measurement objects used in the map
 are anchored to runtime attention.
 
-BASELINES: WHAT COUNTS AS “REAL STRUCTURE”?
+::: {.callout-important}
+## Update (March 2026): Long-Distance Routing
+Long-range structure is weaker than local routing, but it is not absent.
+At 128--256 tokens, 114/200 heads still clear $|\rho| \geq 0.10$, and 108/200
+do so at 256+; the more important failure mode is the late-layer sign
+reversal in overall routing correlations rather than a complete
+disappearance of long-range structure.
+:::
+
+![Head count exceeding correlation thresholds at 128--256 and 256+ token distances. Left panel: 128--256 bin; right panel: 256+ bin.](figs/fig03_long_thresholds.png){#fig-long-distance}
+
+## Baselines: What Counts as "Real Structure"?
 
 Softmax selectivity is extremely sensitive to logit scale, so we need
 baselines that match the right thing. I use three baselines, each
 designed to kill a different kind of structure:
 
-1.  Random decoder directions (random D): Replace decoder directions
-    with random unit vectors (matched norms), keeping W_Q/W_K fixed
+1.  **Random decoder directions** (random D): Replace decoder directions
+    with random unit vectors (matched norms), keeping $W_Q$/$W_K$ fixed
 
-2.  Random weights baseline: Replace W_Q and W_K with random matrices
-    (same shape), then rescale B to match std(B) before computing
-    softmax-derived metrics. Specifically, we rescale B_baseline ←
-    B_baseline × (σ_real / σ_baseline), where σ = std(B).
+2.  **Random weights baseline**: Replace $W_Q$ and $W_K$ with random matrices
+    (same shape), then rescale $B$ to match $\text{std}(B)$ before computing
+    softmax-derived metrics. Specifically, we rescale $B_{\text{baseline}} \leftarrow
+    B_{\text{baseline}} \times (\sigma_{\text{real}} / \sigma_{\text{baseline}})$, where $\sigma = \text{std}(B)$.
 
-3.  Permuted-K baseline: Shuffle key-feature identities by permuting
-    rows of K_f (equivalently, permuting columns of B), so diagonal mass
-    becomes ‘chance self-match’.
+3.  **Permuted-K baseline**: Shuffle key-feature identities by permuting
+    rows of $K_f$ (equivalently, permuting columns of $B$), so diagonal mass
+    becomes 'chance self-match'.
 
 This lets me say things like:
 
-“Selectivity is X times the random-weights baseline.”
+"Selectivity is X times the random-weights baseline."
 
-“Diagonal mass is X times the permuted-K baseline.”
+"Diagonal mass is X times the permuted-K baseline."
 
 Why both matter:
 
@@ -248,35 +266,35 @@ Why both matter:
 
 - diagonal mass is identity-sensitive (it cares that you pick self)
 
-## WEIGHT-SPACE OBJECT #2: WHAT A HEAD WRITES (OV) IN FEATURE SPACE
+## Weight-Space Object #2: What a Head Writes (OV) in Feature Space
 
 Routing is only half the story. Even if a head can attend cleanly, it
-only matters if its output projection writes a direction that’s salient
+only matters if its output projection writes a direction that's salient
 in the SAE feature basis into the residual stream.
 
 For a query head, its write is determined by:
 
-- W_V for the KV group (shared across 2 query heads in Gemma-2 GQA
+- $W_V$ for the KV group (shared across 2 query heads in Gemma-2 GQA
   implementation)
 
-- W_O for the specific query head
+- $W_O$ for the specific query head
 
-Gemma’s effective OV matrix is implemented as:
+Gemma's effective OV matrix is implemented as:
 
-W_(OV) = W_(O) W_(V)
+$$W_{OV} = W_O \cdot W_V$$
 
-For each SAE feature direction dⱼ (row of D), define the write vector:
+For each SAE feature direction $d_j$ (row of $D$), define the write vector:
 
-writeⱼ = dⱼ · W_Vᵀ · W_Oᵀ
+$$\text{write}_j = d_j \cdot W_V^T \cdot W_O^T$$
 
 Project write vectors back onto decoder directions to get a
-“write-to-feature” matrix:
+"write-to-feature" matrix:
 
-W2F[j,k] = cos(writeⱼ, d_k)
+$$\text{W2F}[j,k] = \cos(\text{write}_j,\, d_k)$$
 
 Note: W2F uses cosine similarity, so it measures directional
-alignment and discards magnitude; later I’ll also report write norms /
-activation-grounded deltas so ‘aligned-but-tiny’ writes don’t get
+alignment and discards magnitude; later I'll also report write norms /
+activation-grounded deltas so 'aligned-but-tiny' writes don't get
 over-interpreted.
 
 This helps us define archetypes with concrete scoring.
@@ -284,241 +302,216 @@ This helps us define archetypes with concrete scoring.
 With W2F as the cosine similarity matrix between each feature's write
 vector and all decoder directions, we define:
 
-- COPY score = mean(diag(W2F)): how much feature i writes back to itself
+- **COPY** score = mean(diag(W2F)): how much feature i writes back to itself
 
-- TRANSFORM score = max off-diagonal of W2F: strength of the strongest i
-  → j≠i mapping
+- **TRANSFORM** score = max off-diagonal of W2F: strength of the strongest i
+  $\to$ j$\neq$i mapping
 
-- BROADCAST score = max column sum of W2F: how many features write to
+- **BROADCAST** score = max column sum of W2F: how many features write to
   the same target
 
-- SUPPRESS score = |min off-diagonal of W2F|: strength of the most
+- **SUPPRESS** score = |min off-diagonal of W2F|: strength of the most
   negative write
 
-Across all 200 heads, mean copy dominance is 0.19 (most heads are
-transformative rather than identity-preserving). The strongest copy head
-is L2H2 (copy dominance = 0.90), followed by L24H3 (0.90) and L17H7
-(0.86). Late-layer copy heads cluster in L23–L25, consistent with the
-model needing to preserve and propagate features near the output.
+Copy dominance remains low on average (mean 0.186), but the more
+informative pattern is the upper tail: the strongest copy head is the
+early outlier L2H2 (0.897), while a secondary cluster of near-copy heads
+appears in L23--L25. The distribution by layer is shown in @fig-copy-dominance.
+
+![Copy dominance distribution per layer (violin) and median curve](figs/fig05_copy_dominance.png){#fig-copy-dominance}
 
 A head is classified by whichever score crosses its threshold first
-(COPY > 0.3, TRANSFORM > 0.5, BROADCAST > 3× copy, SUPPRESS > 0.5),
+(COPY > 0.3, TRANSFORM > 0.5, BROADCAST > 3x copy, SUPPRESS > 0.5),
 defaulting to DIFFUSE. I assign a single label using a precedence rule
-(COPY → TRANSFORM → BROADCAST → SUPPRESS → DIFFUSE). Heads can score
+(COPY $\to$ TRANSFORM $\to$ BROADCAST $\to$ SUPPRESS $\to$ DIFFUSE). Heads can score
 highly on multiple axes; the label is just meant to be a coarse summary.
 
 In this taxonomy, SUPPRESS means the head routes positively to some key
-feature j, and then the OV write is negatively aligned with a target
+feature j, and then the OV write is negatively aligned with a target
 feature k (it is not about negative B/avoidance). Also, please note that
-COPY can be negative if the head writes anti-aligned to the feature’s
+COPY can be negative if the head writes anti-aligned to the feature's
 decoder direction.
 
-Few examples:
+A few examples:
 
-*Fig 3(a): TRANSFORM exemplar: Layer 3, Head 2 (high transform_score*
-among TRANSFORM heads)]
+![TRANSFORM exemplar: Layer 3, Head 2 (high transform_score among TRANSFORM heads)](figs/FIG2_transform_L3H2.png){#fig-ov-transform}
 
-*Fig 3(a): TRANSFORM exemplar: Layer 3, Head 2 (high transform_score*
-among TRANSFORM heads)
+![BROADCAST exemplar: Layer 20, Head 0 (highest broadcast_norm among BROADCAST heads)](figs/FIG2_broadcast_L20H0.png){#fig-ov-broadcast}
 
-*Fig 3(b): BROADCAST exemplar: Layer 20, Head 0 (highest broadcast_norm*
-among BROADCAST heads)]
+![COPY exemplar: Layer 2, Head 2](figs/FIG2_copy_L2H2.png){#fig-ov-copy}
 
-*Fig 3(b): BROADCAST exemplar: Layer 20, Head 0 (highest broadcast_norm*
-among BROADCAST heads)
+::: {.callout-important}
+## Update (March 2026): OV Sign-Flip Correction
+OV validation shows a different failure mode from QK routing: late layers
+develop negative outliers, but not a layer-wide median inversion. Most
+late-layer medians stay positive, yet a subset of heads flips sign,
+peaking at 25% negative heads in L21; the strongest outlier is L20H7 at
+cosine = -0.64.
+:::
 
-*Fig 3(c): COPY exemplar: Layer 2, Head 2*
+![OV validation: late negative outliers without a layer-wide median flip](figs/fig10_ov_signflip.png){#fig-ov-signflip}
 
-WEIGHT-SPACE OBJECT #3: COMPOSING “FEATURE PROGRAMS” (i → j → k)
+## Weight-Space Object #3: Composing "Feature Programs" (i $\to$ j $\to$ k)
 
-Once we have routing (B) and writing (W2F), we can compose them into
-simple “programs”:
+Once we have routing ($B$) and writing (W2F), we can compose them into
+simple "programs":
 
-query feature i → attend key feature j → write feature k
+query feature i $\to$ attend key feature j $\to$ write feature k
 
 Programs are extracted from the top tail of routing scores and write
 scores (quantile thresholds), so the taxonomy describes high-confidence
-motifs rather than all mass. We also track when a self-write is a
+motifs rather than all mass. We also track when a self-write is a
 fallback rather than a measured OV target.
 
 Each triplet is scored by combining route strength and write strength.
 Then we can classify it into a small motif family:
 
-Table 1: Program Types
+| Type | Flow |
+|------|------|
+| REINFORCE | i $\to$ i $\to$ i |
+| SHIFT | i $\to$ i $\to$ k (k $\neq$ i) |
+| CROSS_COPY | i $\to$ j $\to$ j (i $\neq$ j) |
+| RELAY | i $\to$ j $\to$ i (i $\neq$ j) |
+| TRANSFORM | i $\to$ j $\to$ k (all different) |
+| SUPPRESS | i $\to$ j $\to$ -k |
 
-```text
-+------------+---------------------------+
-```
-| Type       | Flow                      |
-```text
-+------------+---------------------------+
-```
-| REINFORCE  | i → i → i                 |
-```text
-+------------+---------------------------+
-```
-| SHIFT      | i → i → k (k≠i)           |
-```text
-+------------+---------------------------+
-```
-| CROSS_COPY | i → j → j (i≠j)           |
-```text
-+------------+---------------------------+
-```
-| RELAY      | i → j → i (i≠j)           |
-```text
-+------------+---------------------------+
-```
-| TRANSFORM  | i → j → k (all different) |
-```text
-+------------+---------------------------+
-```
-| SUPPRESS   | i → j → −k                |
-```text
-+------------+---------------------------+
-```
+: Program types and their flow patterns {#tbl-programs}
 
 This is the point where the analysis becomes human-legible: you can say
-“this head implements a lot of CROSS_COPY” or “this layer is
-SUPPRESS-heavy,” without running a prompt.
+"this head implements a lot of CROSS_COPY" or "this layer is
+SUPPRESS-heavy," without running a prompt.
 
-In my run: routing tail ≈ top 10%; write tail ≈ top 20%.
+In my run: routing tail $\approx$ top 10%; write tail $\approx$ top 20%.
 
-POSITION ROBUSTNESS: RoPE STABILITY AS A “SEMANTIC CONTROLLABILITY” PROXY
+## Position Robustness: RoPE Stability as a "Semantic Controllability" Proxy
 
 Gemma-2 uses RoPE, which rotates Q/K vectors as a function of relative
 position. In weight space you can simulate this by rotating keys (or
 queries) and recomputing affinity matrices.
 
-Let B₀ be affinity at relative offset Δ=0, and B_Δ at offset Δ. Define a
+Let $B_0$ be affinity at relative offset $\Delta=0$, and $B_\Delta$ at offset $\Delta$. Define a
 stability score (e.g., cosine similarity of flattened matrices):
 
-stability(Δ) = cos(vec(B₀), vec(B_Δ))
+$$\text{stability}(\Delta) = \cos(\text{vec}(B_0),\, \text{vec}(B_\Delta))$$
 
-Then compress the curve across Δ into a single number (AUC-style over
+Then compress the curve across $\Delta$ into a single number (AUC-style over
 log-distance). I call this RoPE stability: a summary of how similar the
-affinity matrix B stays as we apply relative-position rotations. Also,
+affinity matrix $B$ stays as we apply relative-position rotations. Also,
 we apply the tanh softcap before comparing matrices.
 
-- When this metric is High → routing seems to be mostly
+- When this metric is **High** $\to$ routing seems to be mostly
   content-controlled and stays similar across positions. It could also
   mean that this head doesn't use positional information much because
   it's doing something else entirely.
 
-- And when it is Low → routing depends strongly on relative position
-  (more “twitchy”).
+- And when it is **Low** $\to$ routing depends strongly on relative position
+  (more "twitchy").
 
-This is not “style steerability,” but it is a useful proxy for
-“position-invariant content routing.”
+This is not "style steerability," but it is a useful proxy for
+"position-invariant content routing."
 
-One caveat: cosine similarity can look high if B is very low-magnitude /
+One caveat: cosine similarity can look high if $B$ is very low-magnitude /
 diffuse; I interpret stability alongside routing strength/selectivity.
 
-*Fig 4(a): L24H5 and L17H4 show higher RoPE stability than L25H1 and*
-L5H0]
+![High-controllability heads such as L24H5 and L17H4 stay much closer to $B_0$ across distance than lower-controllability heads like L25H1 and L5H0](figs/fig04_rope_stability_curves.png){#fig-rope-curves}
 
-*Fig 4(a): L24H5 and L17H4 show higher RoPE stability than L25H1 and L5H0*
+![Per-head RoPE stability (AUC) heatmap across all layers and heads. Blue bands mark sliding-window layers.](figs/fig04b_controllability_heatmap.png){#fig-rope-heatmap}
 
-*Fig 4(b): Some heads like L5H0 and L13H0 are heavily affected by RoPE*
-distances]
-
-*Fig 4(b): Some heads like L5H0 and L13H0 are heavily affected by RoPE*
-distances
-
-RESULTS: WHAT CHANGES WITH DEPTH?
+## Results: What Changes with Depth?
 
 Once we compute these objects across layers and heads, we can summarize
-how the model’s attention machinery evolves with depth.
+how the model's attention machinery evolves with depth.
 
-1.  Local (sliding-window) vs global layers
+### 1. Local (Sliding-Window) vs Global Layers
 
-    Gemma-2 alternates local and global attention by layer, giving a
-    built-in contrast:
+Gemma-2 alternates local and global attention by layer, giving a
+built-in contrast:
 
-Sliding-window layers can’t directly attend to tokens outside the
+Sliding-window layers can't directly attend to tokens outside the
 window, but they can still transform a residual stream that already
 contains long-range information injected by earlier global layers.
 
 Global layers are the only layers that can implement direct long-range
 attention pointers.
 
-*Fig 5(a): Sliding window attention layers show more selectivity*
+![Routing selectivity: sliding-window vs global layers](figs/fig07_selectivity_by_type.png){#fig-sel-by-type}
 
-*Fig 5(b): Sliding window attention layers show more diagonal*
-(self-probability) mass]
+![Identity sensitivity: sliding-window vs global layers](figs/fig08_diagm_by_type.png){#fig-diagm-by-type}
 
-*Fig 5(b): Sliding window attention layers show more diagonal*
-(self-probability) mass
+### 2. Selectivity and Identity-Sensitivity Are Not Monotone
 
-2.  Selectivity and identity-sensitivity are not monotone
-
-    Two different things can happen as depth grows:
+Two different things can happen as depth grows:
 
 1.  Peakiness (top-1 softmax mass) can increase because the model learns
-    sharper “addressing”
+    sharper "addressing"
 
 2.  Identity sensitivity (diagonal softmax mass) can increase if heads
-    learn an i→i “feature self-match” pattern
+    learn an i$\to$i "feature self-match" pattern
 
-In my current run, there’s a very strong spike in these metrics around a
+In my current run, there's a very strong spike in these metrics around a
 mid layer (one layer stands out dramatically on both selectivity and
-diagonal mass). That suggests a “band” of unusually crisp routing
+diagonal mass). That suggests a "band" of unusually crisp routing
 behavior rather than a smooth trend.
 
-*Fig 6: Sel×U and DiagM×U vs layer*
+![Sel$\times$U and DiagM$\times$U vs layer. Blue = sliding-window, red = global.](figs/fig09_sel_diagm_vs_layer.png){#fig-sel-diagm-depth}
 
-3.  RoPE stability tends to rise with depth (with bands)
+::: {.callout-note}
+## What Surprised Me
+The Layer 6 spike was the single most dramatic finding -- Sel$\times$U of 105 means the routing structure is two orders of magnitude above uniform baseline. I expected a smooth gradient, not a spike. This showed up consistently across different feature subsets and seeds.
+:::
 
-    RoPE stability tends to increase with depth, but it’s not smooth.
-    There are high-controllability bands (mid layers and a late cluster
-    near the top of the network).
+### 3. RoPE Stability Tends to Rise with Depth (with Bands)
 
-*Fig 7: RoPE stability vs layer*
+RoPE stability tends to increase with depth, but it's not smooth.
+There are high-controllability bands (mid layers and a late cluster
+near the top of the network).
 
-4.  Writes become more targeted late in the network
+![Mean semantic controllability (RoPE AUC) per layer with $\pm$1 std across heads](figs/fig11_rope_vs_layer.png){#fig-rope-depth}
 
-    In this run, transform-like write structure is not monotone with
-    depth; it concentrates in specific bands. I’ll show that
-    distribution rather than claiming a smooth trend.
+### 4. Writes Become More Targeted Late in the Network
+
+In this run, transform-like write structure is not monotone with
+depth; it concentrates in specific bands. I'll show that
+distribution rather than claiming a smooth trend.
 
 My intuition: late layers are closer to logits, so targeted writes are
 more valuable and weight-space seems to reflect that.
 
-*Fig 8: fraction of TRANSFORM vs BROADCAST heads*
+![Write archetype distribution by layer](figs/fig12_archetype_fraction.png){#fig-archetype-fraction}
 
-5.  Redundancy vs uniqueness (where structure concentrates)
+### 5. Redundancy vs Uniqueness (Where Structure Concentrates)
 
-    I track how redundant heads are within a layer (do they “do the same
-    thing” in program space?). Redundancy = Jaccard similarity of top-20
-    routing pairs between heads. Two heads are considered redundant if
-    they route the same (query_feature → key_feature) pairs highly:
+I track how redundant heads are within a layer (do they "do the same
+thing" in program space?). Redundancy = Jaccard similarity of top-20
+routing pairs between heads. Two heads are considered redundant if
+they route the same (query_feature $\to$ key_feature) pairs highly:
 
-Low redundancy: a few specialized heads carry most structure → could be
-potential larger single-head “levers”
+Low redundancy: a few specialized heads carry most structure -- could be
+potential larger single-head "levers"
 
-High redundancy: many heads share similar top programs → could mean that
+High redundancy: many heads share similar top programs -- could mean that
 the layer is robust to removing any one head
 
 To avoid noise, I primarily interpret redundancy within the subset of
 heads that show structured routing (e.g., above a small selectivity or
 correlation threshold).
 
-*Fig 9: Within layer attention head features redundancy vs layer*
+![Within-layer head redundancy (mean Jaccard of top-20 routing pairs) by layer](figs/fig13_redundancy_vs_layer.png){#fig-redundancy}
 
-## A CONCRETE SNAPSHOT FROM ONE RUN
+## A Concrete Snapshot from One Run
 
-In the run I’m looking at while writing this post:
+In the run I'm looking at while writing this post:
 
-I analyze layers 1–25 (dropping layer 0 because the SAE alignment uses
-an L−1 offset).
+I analyze layers 1--25 (dropping layer 0 because the SAE alignment uses
+an L-1 offset).
 
 Feature subset size: n = 4,096 for weight-space metrics (so uniform
 top-1 mass baseline is 1/n). The activation-grounding sanity check above
 uses all 16,384 SAE features (full dictionary) with RoPE-aware distance
 bins.
 
-1.  One mid layer (6) shows an extreme spike: Sel×U ≈ 105× and DiagM×U ≈
-    52×, along with a big max-gap
+1.  One mid layer (6) shows an extreme spike: Sel$\times$U $\approx$ 105$\times$ and DiagM$\times$U $\approx$
+    52$\times$, along with a big max-gap
 
 2.  Several later layers also show high selectivity and diagonal mass,
     but with different redundancy/controllability profiles
@@ -529,137 +522,63 @@ bins.
 Please note that this is one seed / one feature subset; absolute values
 shift, but the qualitative bands are stable in my spot checks.
 
-Table 2: LAYER SUMMARIES (scaled for interpretability)
+:::{.column-page}
 
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| Layer | SAE | Slide | Sel_xU | DiagM_xU | MaxGap | Ctrl  | Copy   | Trans |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 1     | 0   | No    | 4.32   | 2.84     | 0.09   | 0.679 | 0.014  | 0.398 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 2     | 1   | Yes   | 1.86   | 1.00     | 0.06   | 0.630 | -0.050 | 0.390 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 3     | 2   | No    | 1.70   | 1.20     | 0.07   | 0.629 | 0.006  | 0.474 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 4     | 3   | Yes   | 1.77   | 1.21     | 0.07   | 0.635 | -0.015 | 0.392 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 5     | 4   | No    | 1.37   | 1.17     | 0.05   | 0.639 | -0.023 | 0.313 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 6     | 5   | Yes   | 105.71 | 52.16    | 0.50   | 0.722 | -0.019 | 0.432 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 7     | 6   | No    | 16.73  | 1.82     | 0.17   | 0.664 | 0.021  | 0.403 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 8     | 7   | Yes   | 41.62  | 22.16    | 0.41   | 0.728 | 0.011  | 0.324 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 9     | 8   | No    | 10.25  | 7.04     | 0.24   | 0.690 | 0.026  | 0.308 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 10    | 9   | Yes   | 11.27  | 9.90     | 0.23   | 0.672 | 0.000  | 0.373 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 11    | 10  | No    | 4.20   | 3.32     | 0.10   | 0.670 | 0.009  | 0.462 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 12    | 11  | Yes   | 30.74  | 21.20    | 0.32   | 0.708 | -0.008 | 0.388 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 13    | 12  | No    | 5.07   | 3.35     | 0.14   | 0.672 | 0.021  | 0.365 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 14    | 13  | Yes   | 40.48  | 26.68    | 0.34   | 0.732 | 0.003  | 0.510 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 15    | 14  | No    | 29.71  | 5.98     | 0.20   | 0.658 | 0.027  | 0.446 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 16    | 15  | Yes   | 24.28  | 15.83    | 0.27   | 0.719 | 0.066  | 0.450 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 17    | 16  | No    | 10.94  | 8.25     | 0.19   | 0.702 | 0.008  | 0.540 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 18    | 17  | Yes   | 17.11  | 11.15    | 0.21   | 0.701 | 0.037  | 0.520 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 19    | 18  | No    | 8.35   | 4.19     | 0.16   | 0.665 | 0.035  | 0.562 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 20    | 19  | Yes   | 12.38  | 6.85     | 0.21   | 0.682 | 0.010  | 0.505 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 21    | 20  | No    | 36.92  | 23.91    | 0.28   | 0.650 | 0.057  | 0.520 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 22    | 21  | Yes   | 52.61  | 20.80    | 0.47   | 0.755 | 0.030  | 0.473 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 23    | 22  | No    | 51.34  | 19.98    | 0.41   | 0.729 | 0.036  | 0.549 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 24    | 23  | Yes   | 35.26  | 18.92    | 0.34   | 0.711 | 0.023  | 0.561 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
-| 25    | 24  | No    | 8.07   | 4.36     | 0.19   | 0.632 | 0.036  | 0.589 |
-```text
-+-------+-----+-------+--------+----------+--------+-------+--------+-------+
-```
+| Layer | SAE | Slide | Sel$\times$U | DiagM$\times$U | MaxGap | Ctrl | Copy | Trans |
+|------:|----:|:-----:|------:|--------:|-------:|-----:|-----:|------:|
+| 1 | 0 | No | 4.32 | 2.84 | 0.09 | 0.679 | 0.014 | 0.398 |
+| 2 | 1 | Yes | 1.86 | 1.00 | 0.06 | 0.630 | -0.050 | 0.390 |
+| 3 | 2 | No | 1.70 | 1.20 | 0.07 | 0.629 | 0.006 | 0.474 |
+| 4 | 3 | Yes | 1.77 | 1.21 | 0.07 | 0.635 | -0.015 | 0.392 |
+| 5 | 4 | No | 1.37 | 1.17 | 0.05 | 0.639 | -0.023 | 0.313 |
+| 6 | 5 | Yes | 105.71 | 52.16 | 0.50 | 0.722 | -0.019 | 0.432 |
+| 7 | 6 | No | 16.73 | 1.82 | 0.17 | 0.664 | 0.021 | 0.403 |
+| 8 | 7 | Yes | 41.62 | 22.16 | 0.41 | 0.728 | 0.011 | 0.324 |
+| 9 | 8 | No | 10.25 | 7.04 | 0.24 | 0.690 | 0.026 | 0.308 |
+| 10 | 9 | Yes | 11.27 | 9.90 | 0.23 | 0.672 | 0.000 | 0.373 |
+| 11 | 10 | No | 4.20 | 3.32 | 0.10 | 0.670 | 0.009 | 0.462 |
+| 12 | 11 | Yes | 30.74 | 21.20 | 0.32 | 0.708 | -0.008 | 0.388 |
+| 13 | 12 | No | 5.07 | 3.35 | 0.14 | 0.672 | 0.021 | 0.365 |
+| 14 | 13 | Yes | 40.48 | 26.68 | 0.34 | 0.732 | 0.003 | 0.510 |
+| 15 | 14 | No | 29.71 | 5.98 | 0.20 | 0.658 | 0.027 | 0.446 |
+| 16 | 15 | Yes | 24.28 | 15.83 | 0.27 | 0.719 | 0.066 | 0.450 |
+| 17 | 16 | No | 10.94 | 8.25 | 0.19 | 0.702 | 0.008 | 0.540 |
+| 18 | 17 | Yes | 17.11 | 11.15 | 0.21 | 0.701 | 0.037 | 0.520 |
+| 19 | 18 | No | 8.35 | 4.19 | 0.16 | 0.665 | 0.035 | 0.562 |
+| 20 | 19 | Yes | 12.38 | 6.85 | 0.21 | 0.682 | 0.010 | 0.505 |
+| 21 | 20 | No | 36.92 | 23.91 | 0.28 | 0.650 | 0.057 | 0.520 |
+| 22 | 21 | Yes | 52.61 | 20.80 | 0.47 | 0.755 | 0.030 | 0.473 |
+| 23 | 22 | No | 51.34 | 19.98 | 0.41 | 0.729 | 0.036 | 0.549 |
+| 24 | 23 | Yes | 35.26 | 18.92 | 0.34 | 0.711 | 0.023 | 0.561 |
+| 25 | 24 | No | 8.07 | 4.36 | 0.19 | 0.632 | 0.036 | 0.589 |
+
+: Layer summaries scaled for interpretability {#tbl-layers}
+
+:::
 
 Identified program distribution across all layers:
 
 - CROSS_COPY: 3758 (40.8%)
-
 - SUPPRESS: 2943 (31.9%)
-
 - REINFORCE: 2113 (22.9%)
-
 - TRANSFORM: 212 (2.3%)
-
 - SHIFT: 164 (1.8%)
-
 - RELAY: 31 (0.3%)
 
-## WHAT I THINK THIS MEANS
+::: {.callout-note}
+## Depth Story
+The pooled program mix is led by CROSS_COPY and SUPPRESS, but the depth story is more informative than the global percentages alone. Early layers are suppress-heavy, mid layers are more mixed between CROSS_COPY / SUPPRESS / REINFORCE, and late layers tilt back toward CROSS_COPY. This makes the "map" claim sharper: the dominant program motif changes with depth even when the global histogram looks stable.
+:::
 
-Weight-space analysis is not telling you “what the model will output.”
-It’s telling you what kinds of operations are available in the weights,
+![Weight-space program distribution by layer](figs/fig06_program_distribution.png){#fig-program-dist}
+
+## What I Think This Means
+
+Weight-space analysis is not telling you "what the model will output."
+It's telling you what kinds of operations are available in the weights,
 and where in depth those operations concentrate.
 
-Safest takeaways from this weight-space + SAE-basis analysis:
+Safest takeaways from this weight-space + SAE-basis analysis:
 
 - Local vs global layers are qualitatively different substrates. If a
   behavior requires long-range access, only global layers can implement
@@ -672,10 +591,10 @@ Safest takeaways from this weight-space + SAE-basis analysis:
   contain heads whose OV paths implement systematic feature-to-feature
   rewriting.
 
-- Redundancy varies a lot. Some layers look like “few special heads,”
+- Redundancy varies a lot. Some layers look like "few special heads,"
   others spread structure across many heads.
 
-## PREDICTIONS FOR POST 2 (EXPERIMENTS DRIVEN BY WEIGHT-SPACE)
+## Predictions for Post 2 (Experiments Driven by Weight-Space)
 
 In Post 2, I will test behavior, but driven by pre-registered
 weight-space predictions.
@@ -687,48 +606,50 @@ errors on retrieval-style tasks; ablating their OV contribution may
 measurably change accuracy (possibly improve or worsen), especially at
 large distances.
 
-Update (Jan 2026): I ran causal ablation experiments on Layer 23 — which
-the weight-space map flagged as a high-selectivity, high-controllability
-layer — ablating individual heads and multi-head combinations (H0,
-H1+H6, H4+H5) on retrieval-style prompts with symmetry controls (swapped
-A↔B). I also ran a full OV writing validation across all 200 heads
-confirming that predicted feature writes match actual head output with
-mean cosine similarity of +0.50 in early/mid layers, but flip sign in
-late layers (e.g., L20H7 cosine = −0.64), a finding that persists with
-the full 16K feature set. Post 2 is forthcoming with full results.
+::: {.callout-important}
+## Update (Jan 2026): Causal Ablation Results
+I ran causal ablation experiments on Layer 23 -- which the weight-space
+map flagged as a high-selectivity, high-controllability layer -- ablating
+individual heads and multi-head combinations (H0, H1+H6, H4+H5) on
+retrieval-style prompts with symmetry controls (swapped A$\leftrightarrow$B). I also ran a
+full OV writing validation across all 200 heads confirming that predicted
+feature writes match actual head output with mean cosine similarity of
++0.50 in early/mid layers, but develop negative outliers in late layers --
+not a layer-wide median inversion. Most late-layer medians stay positive,
+yet a subset of heads flips sign, peaking at 25% negative heads in L21;
+the strongest outlier is L20H7 at cosine = -0.64 (see @fig-ov-signflip). This finding persists
+with the full 16K feature set. Post 2 is forthcoming with full results.
+:::
 
 Thank you very much for reading.
 
 Feedback, comments, and discussion are always welcome!
-
-I am working on publishing the code to GitHub. Will update here once
-done.
 
 Implementation detail note: model constants like attention scaling, RoPE
 placement, and alternating sliding-window convention are codified in the
 project config.
 
 This work is inspired by Anthropic's
-https://transformer-circuits.pub/ series of work.
+[Transformer Circuits](https://transformer-circuits.pub/) series of work.
 
-## APPENDIX: METRIC GLOSSARY
+## Appendix: Metric Glossary
 
-- top1_mass = mean over query features of max softmax probability across
+- **top1_mass** = mean over query features of max softmax probability across
   keys
 
-- Sel×U = top1_mass ÷ (1/n)
+- **Sel$\times$U** = top1_mass $\div$ (1/n)
 
-- diagonal_softmax_mass = mean softmax mass on the diagonal entry
+- **diagonal_softmax_mass** = mean softmax mass on the diagonal entry
   (identity-sensitive)
 
-- DiagM×U = diagonal_softmax_mass ÷ (1/n)
+- **DiagM$\times$U** = diagonal_softmax_mass $\div$ (1/n)
 
-- max_gap = average(top1_logit − top2_logit) per row
+- **max_gap** = average(top1_logit - top2_logit) per row
 
-- semantic_controllability = summary of how stable B remains under
+- **semantic_controllability** = summary of how stable $B$ remains under
   RoPE-relative rotations
 
-- COPY / TRANSFORM / BROADCAST / SUPPRESS = write archetypes derived
+- **COPY / TRANSFORM / BROADCAST / SUPPRESS** = write archetypes derived
   from W2F
 
-- Feature programs = composed triplets i → j → k with a small taxonomy
+- **Feature programs** = composed triplets i $\to$ j $\to$ k with a small taxonomy
