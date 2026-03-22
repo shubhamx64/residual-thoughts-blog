@@ -1,0 +1,5 @@
+﻿---
+title: "About"
+---
+
+I write about machine learning interpretability, model geometry, and experiments.

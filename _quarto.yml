@@ -1,0 +1,26 @@
+﻿project:
+  type: website
+
+website:
+  title: "Residual Thoughts"
+  site-url: "https://www.residual-thoughts.com"
+  navbar:
+    left:
+      - href: index.qmd
+        text: Home
+      - href: about.qmd
+        text: About
+      - text: Posts
+        href: posts/index.qmd
+  page-footer:
+    center: "Residual Thoughts"
+
+format:
+  html:
+    theme: cosmo
+    css: styles.css
+    toc: true
+    html-math-method: katex
+
+execute:
+  freeze: auto

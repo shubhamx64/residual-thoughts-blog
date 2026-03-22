@@ -1,0 +1,10 @@
+﻿---
+title: "Residual Thoughts"
+listing:
+  contents: posts
+  sort: "date desc"
+  type: default
+  fields: [title, date, categories]
+---
+
+Notes on mechanistic interpretability, geometry, and model behavior.

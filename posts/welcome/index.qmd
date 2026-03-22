@@ -1,0 +1,13 @@
+﻿---
+title: "Welcome"
+date: "2026-03-22"
+categories: [setup, math]
+---
+
+This is a sample post with inline math $\alpha + \beta = \gamma$.
+
+And a display equation:
+
+$$
+\mathrm{Attention}(Q, K, V) = \mathrm{softmax}\left(\frac{QK^\top}{\sqrt{d_k}}\right)V
+$$
