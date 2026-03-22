@@ -623,8 +623,9 @@ This work is inspired by Anthropic's
 [Transformer Circuits](https://transformer-circuits.pub/) series,
 especially [A Mathematical Framework for Transformer Circuits](https://transformer-circuits.pub/2021/framework/index.html).
 
-Code for the analysis pipeline is available on
-[GitHub](https://github.com/shubhamx64/s2path).
+Code for the analysis pipeline is available in the
+[code/weight-space-map](https://github.com/shubhamx64/residual-thoughts-blog/tree/main/code/weight-space-map)
+directory of this site's repository.
 
 Feedback, comments, and discussion are welcome.
 

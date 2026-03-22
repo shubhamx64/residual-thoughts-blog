@@ -1,5 +1,8 @@
 ﻿project:
   type: website
+  render:
+    - "**/*.qmd"
+    - "!code/"
 
 website:
   title: "Residual Thoughts"
