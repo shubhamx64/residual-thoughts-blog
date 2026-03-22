@@ -1,4 +1,549 @@
-﻿/* Keep styles intentionally minimal for now. */
+/* ============================================================
+   Residual Thoughts — Custom Styles
+   Scholarly, refined aesthetic for mechanistic interpretability research
+   ============================================================ */
+
+/* --- Global & Typography --- */
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 80px;
+}
+
 body {
-  line-height: 1.6;
+  font-family: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+  line-height: 1.75;
+  font-size: 1.05rem;
+  color: #2d2d2d;
+  background-color: #fafaf8;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6,
+.navbar-title,
+.listing-title,
+.quarto-title h1.title {
+  font-family: 'Source Sans 3', 'Segoe UI', Roboto, sans-serif;
+  font-weight: 600;
+  color: #1a1a2e;
+  letter-spacing: -0.01em;
+}
+
+h1 { font-size: 2.1rem; margin-top: 2rem; margin-bottom: 1rem; }
+h2 { font-size: 1.6rem; margin-top: 2.5rem; margin-bottom: 0.75rem; padding-bottom: 0.3rem; border-bottom: 1px solid #e0ddd5; }
+h3 { font-size: 1.3rem; margin-top: 2rem; margin-bottom: 0.6rem; }
+
+.quarto-title .quarto-title-subtitle {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-style: italic;
+  font-size: 1.15rem;
+  color: #555;
+  margin-top: 0.25rem;
+}
+
+p {
+  margin-bottom: 1.1rem;
+}
+
+strong {
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
+ul, ol {
+  margin-bottom: 1.1rem;
+}
+
+li {
+  margin-bottom: 0.3rem;
+}
+
+::selection {
+  background-color: #d6e4f0;
+  color: #1a1a2e;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid #e0ddd5;
+  margin: 2rem 0;
+}
+
+/* --- Links --- */
+
+a {
+  color: #2c5f7c;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: color 0.15s ease, border-bottom-color 0.15s ease;
+}
+
+a:hover {
+  color: #1a3f5c;
+  border-bottom-color: #1a3f5c;
+}
+
+/* --- Title Block --- */
+
+.quarto-title-block {
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 2px solid #e0ddd5;
+}
+
+.quarto-title h1.title {
+  font-size: 2.2rem;
+  line-height: 1.25;
+  margin-bottom: 0.3rem;
+}
+
+.quarto-title-meta {
+  font-family: 'Source Sans 3', sans-serif;
+  font-size: 0.9rem;
+  color: #666;
+  margin-top: 0.75rem;
+}
+
+/* --- Figures & Captions --- */
+
+.quarto-float.quarto-figure {
+  margin: 2rem auto;
+  max-width: 95%;
+}
+
+.quarto-float .figure-img,
+.quarto-figure .figure-img {
+  border: 1px solid #e0ddd5;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  transition: box-shadow 0.2s ease;
+}
+
+.quarto-float .figure-img:hover,
+.quarto-figure .figure-img:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.10);
+}
+
+.quarto-float-caption,
+figcaption {
+  text-align: center;
+  font-family: 'Source Sans 3', sans-serif;
+  font-size: 0.88rem;
+  color: #555;
+  line-height: 1.5;
+  padding: 0.6rem 1.5rem 0;
+  margin-top: 0.5rem;
+}
+
+/* --- Callout Boxes --- */
+
+.callout {
+  border-radius: 4px;
+  border: none;
+  margin: 1.5rem 0;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.callout-header {
+  font-family: 'Source Sans 3', sans-serif;
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 0.6rem 1rem;
+  border-radius: 4px 4px 0 0;
+}
+
+.callout-body-container {
+  padding: 0.75rem 1rem 1rem;
+  font-size: 0.95rem;
+}
+
+.callout-note {
+  border-left: 4px solid #4a7c9b;
+  background-color: #f4f7fa;
+}
+.callout-note .callout-header {
+  background-color: #eaf0f6;
+  color: #2c5f7c;
+}
+
+.callout-tip {
+  border-left: 4px solid #5a8a6a;
+  background-color: #f4f8f5;
+}
+.callout-tip .callout-header {
+  background-color: #e8f2eb;
+  color: #3a6a4a;
+}
+
+.callout-warning {
+  border-left: 4px solid #b8860b;
+  background-color: #fdf8ef;
+}
+.callout-warning .callout-header {
+  background-color: #f8f0dc;
+  color: #7a5a08;
+}
+
+.callout-important {
+  border-left: 4px solid #b04040;
+  background-color: #fdf4f4;
+}
+.callout-important .callout-header {
+  background-color: #f8e8e8;
+  color: #8a2020;
+}
+
+/* --- Navigation Bar --- */
+
+.navbar {
+  background-color: #1a1a2e !important;
+  border-bottom: 1px solid #2a2a4e;
+  padding: 0.6rem 0;
+  font-family: 'Source Sans 3', sans-serif;
+}
+
+.navbar-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #f0ece4 !important;
+}
+
+.navbar .nav-link,
+.navbar .menu-text {
+  font-size: 0.92rem;
+  font-weight: 400;
+  color: #c8c4bc !important;
+  transition: color 0.15s ease;
+  letter-spacing: 0.01em;
+}
+
+.navbar .nav-link:hover,
+.navbar .nav-link.active {
+  color: #ffffff !important;
+}
+
+.navbar .nav-link.active {
+  border-bottom: 2px solid #7ba3c0;
+  padding-bottom: 0.3rem;
+}
+
+/* --- Footer --- */
+
+footer.footer {
+  background-color: #1a1a2e;
+  color: #a0a0a0;
+  border-top: 1px solid #2a2a4e;
+  padding: 1.25rem 0;
+  margin-top: 3rem;
+  font-family: 'Source Sans 3', sans-serif;
+  font-size: 0.85rem;
+}
+
+.nav-footer {
+  color: #a0a0a0;
+}
+
+.nav-footer a {
+  color: #c8c4bc;
+  border-bottom: none;
+}
+
+.nav-footer a:hover {
+  color: #ffffff;
+}
+
+.nav-footer-center p {
+  font-style: italic;
+  margin: 0;
+}
+
+/* --- Post Listing Cards --- */
+
+.quarto-listing-container-default .quarto-post {
+  border: 1px solid #e8e5dd;
+  border-radius: 6px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1rem;
+  background-color: #ffffff;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.quarto-listing-container-default .quarto-post:hover {
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.07);
+  border-color: #d0cdc5;
+}
+
+.quarto-post .listing-title {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+}
+
+.quarto-post .listing-title a {
+  color: #1a1a2e;
+  border-bottom: none;
+}
+
+.quarto-post .listing-title a:hover {
+  color: #2c5f7c;
+}
+
+.listing-category {
+  font-family: 'Source Sans 3', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background-color: #eef2f6;
+  color: #4a7c9b;
+  border: 1px solid #d6dfe8;
+  border-radius: 3px;
+  padding: 0.15rem 0.5rem;
+  margin-right: 0.35rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.listing-category:hover {
+  background-color: #d6dfe8;
+}
+
+.listing-date {
+  font-family: 'Source Sans 3', sans-serif;
+  font-size: 0.85rem;
+  color: #888;
+}
+
+/* --- Tables --- */
+
+.table {
+  font-family: 'Source Sans 3', sans-serif;
+  font-size: 0.9rem;
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  margin: 1.5rem 0;
+}
+
+.table thead th {
+  background-color: #1a1a2e;
+  color: #f0ece4;
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.65rem 0.75rem;
+  border-bottom: 2px solid #1a1a2e;
+}
+
+.table thead th:first-child {
+  border-top-left-radius: 4px;
+}
+
+.table thead th:last-child {
+  border-top-right-radius: 4px;
+}
+
+.table tbody td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #e8e5dd;
+  vertical-align: middle;
+}
+
+.table tbody tr:nth-child(even) {
+  background-color: #f9f8f5;
+}
+
+.table tbody tr:hover {
+  background-color: #f0ece4;
+}
+
+.table caption,
+.quarto-float-tbl .quarto-float-caption {
+  text-align: center;
+  font-family: 'Source Sans 3', sans-serif;
+  font-size: 0.88rem;
+  color: #555;
+  padding: 0.5rem 0;
+  caption-side: top;
+}
+
+.column-page .table tbody td {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Code Blocks --- */
+
+code {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.88em;
+  background-color: #f5f3ee;
+  border: 1px solid #e8e5dd;
+  border-radius: 3px;
+  padding: 0.1em 0.35em;
+  color: #c7254e;
+}
+
+pre {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.85rem;
+  background-color: #f8f7f4;
+  border: 1px solid #e8e5dd;
+  border-radius: 4px;
+  padding: 1rem 1.25rem;
+  line-height: 1.55;
+  overflow-x: auto;
+}
+
+pre code {
+  background-color: transparent;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  color: inherit;
+}
+
+.code-copy-button {
+  border: none;
+  background-color: transparent;
+  opacity: 0.4;
+  transition: opacity 0.15s ease;
+}
+
+.code-copy-button:hover {
+  opacity: 0.8;
+}
+
+/* --- Math (KaTeX) --- */
+
+.math.display {
+  display: block;
+  margin: 1.5rem 0;
+  overflow-x: auto;
+  padding: 0.25rem 0;
+  font-size: 1.05em;
+}
+
+.math.inline {
+  font-size: 1.0em;
+}
+
+.katex {
+  font-size: 1.05em;
+}
+
+.katex-display {
+  margin: 1.5rem 0;
+}
+
+/* --- Table of Contents Sidebar --- */
+
+#TOC {
+  font-family: 'Source Sans 3', sans-serif;
+  font-size: 0.82rem;
+  border-left: 2px solid #e8e5dd;
+  padding-left: 1rem;
+}
+
+#toc-title {
+  font-weight: 700;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #1a1a2e;
+  margin-bottom: 0.75rem;
+}
+
+#TOC .nav-link {
+  color: #666;
+  padding: 0.2rem 0;
+  border-bottom: none;
+  line-height: 1.35;
+}
+
+#TOC .nav-link:hover {
+  color: #2c5f7c;
+}
+
+#TOC .nav-link.active {
+  color: #1a1a2e;
+  font-weight: 600;
+  border-left: 2px solid #2c5f7c;
+  margin-left: -1.125rem;
+  padding-left: 0.925rem;
+}
+
+/* --- Blockquotes --- */
+
+blockquote {
+  border-left: 3px solid #4a7c9b;
+  margin: 1.5rem 0;
+  padding: 0.5rem 1.25rem;
+  color: #555;
+  font-style: italic;
+  background-color: #f9f8f5;
+  border-radius: 0 4px 4px 0;
+}
+
+blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+/* --- Section Spacing --- */
+
+section {
+  margin-bottom: 1rem;
+}
+
+.column-page {
+  margin-top: 1.5rem;
+  margin-bottom: 1.5rem;
+  overflow-x: auto;
+}
+
+/* --- Responsive --- */
+
+@media (max-width: 768px) {
+  body {
+    font-size: 1rem;
+    line-height: 1.65;
+  }
+
+  h1 { font-size: 1.7rem; }
+  h2 { font-size: 1.35rem; }
+  h3 { font-size: 1.15rem; }
+
+  .quarto-title h1.title {
+    font-size: 1.75rem;
+  }
+
+  .quarto-float.quarto-figure {
+    max-width: 100%;
+    margin: 1.25rem auto;
+  }
+
+  .quarto-float-caption,
+  figcaption {
+    padding: 0.5rem 0.5rem 0;
+    font-size: 0.82rem;
+  }
+
+  .callout {
+    margin: 1rem 0;
+  }
+
+  .callout-body-container {
+    padding: 0.6rem 0.75rem 0.75rem;
+  }
+
+  .column-page {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .quarto-listing-container-default .quarto-post {
+    padding: 1rem;
+  }
 }
