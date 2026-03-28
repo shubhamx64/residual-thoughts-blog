@@ -1,0 +1,16 @@
+---
+title: "About"
+about:
+  template: solana
+  links:
+    - icon: github
+      text: GitHub
+      href: https://github.com/shubhamx64
+    - icon: envelope
+      text: Email
+      href: mailto:shubham.lumia@gmail.com
+---
+
+Shubham Srivastava. Software engineer by day. This is a weekend blog --
+lab notes on whatever I'm curious about, currently leaning toward
+mechanistic interpretability and model geometry.

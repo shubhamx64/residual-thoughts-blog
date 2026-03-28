@@ -9,12 +9,22 @@ website:
   site-url: "https://www.residual-thoughts.com"
   favicon: favicon.png
   navbar:
-    left: []
+    left:
+      - text: "About"
+        href: about.qmd
   open-graph: true
   twitter-card: true
   page-footer:
     left: "&copy; 2025–2026 Residual Thoughts"
     center: "Notes on mechanistic interpretability, geometry, and model behavior."
+    right: |
+      <a href="https://github.com/shubhamx64" title="GitHub">
+        <i class="bi bi-github"></i> shubhamx64
+      </a>
+      &nbsp;&middot;&nbsp;
+      <a href="mailto:shubham.lumia@gmail.com" title="Email">
+        <i class="bi bi-envelope"></i>
+      </a>
 
 format:
   html:

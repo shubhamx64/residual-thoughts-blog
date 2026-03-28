@@ -1,7 +1,7 @@
 ---
 title: "A Weight-Space Map of Attention Heads in Gemma-2 (with SAEs)"
 subtitle: "Lab notes on mechanistic interpretability without activations"
-author: "shubhamx64"
+author: "Shubham Srivastava"
 date: "2026-01-02"
 date-modified: "2026-03-22"
 categories: [mechanistic-interpretability, gemma-2, sae, attention-heads]
