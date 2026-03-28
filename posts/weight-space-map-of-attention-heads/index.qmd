@@ -2,18 +2,13 @@
 title: "A Weight-Space Map of Attention Heads in Gemma-2 (with SAEs)"
 subtitle: "Lab notes on mechanistic interpretability without activations"
 author: "Shubham Srivastava"
-date: "2026-01-02"
-date-modified: "2026-03-22"
+date: "2026-03-22"
+date-modified: "2026-03-28"
 categories: [mechanistic-interpretability, gemma-2, sae, attention-heads]
 description: "Can we learn something useful about attention heads without sampling new activations? This post uses Gemma-2 2B and Gemma Scope residual-stream SAEs to build a weight-space map of routing and writing behavior."
 image: figs/hero.png
 toc-depth: 3
 ---
-
-::: {.callout-note}
-## Provenance
-Originally published January 2, 2026. Migrated from Wix Studio and updated March 2026 with corrected figures and full 16K-feature validation results.
-:::
 
 This post uses model weights plus a fixed SAE feature basis to map what
 kinds of routing and writing patterns are available inside Gemma-2
