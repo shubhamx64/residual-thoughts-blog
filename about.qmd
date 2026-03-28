@@ -6,11 +6,13 @@ about:
     - icon: github
       text: GitHub
       href: https://github.com/shubhamx64
+    - icon: linkedin
+      text: LinkedIn
+      href: https://www.linkedin.com/in/shubhamx64/
     - icon: envelope
       text: Email
       href: mailto:shubham.lumia@gmail.com
 ---
 
-Shubham Srivastava. Software engineer by day. This is a weekend blog --
-lab notes on whatever I'm curious about, currently leaning toward
-mechanistic interpretability and model geometry.
+Shubham Srivastava. 5G software engineer at Qualcomm. Weekend lab notes on
+mechanistic interpretability and whatever else catches my attention.
