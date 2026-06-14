@@ -4,11 +4,18 @@ RoPE (Rotary Position Embedding) utilities for Gemma-2.
 Key facts for Gemma-2:
 - RoPE is applied AFTER Q/K projection and BEFORE attention dot-product
 - It's a multiplicative rotation, not additive position vectors
-- Rotation is block-diagonal: pairs of dimensions rotate together
+- HF Gemma-2 uses the rotate_half (NeoX/half-split) convention:
+  dimension i pairs with dimension i + head_dim/2, both rotating with
+  inv_freq[i]. NOT the interleaved (2i, 2i+1) GPT-J convention.
+  See modeling_gemma2.py: rotate_half + apply_rotary_pos_emb with
+  cos/sin = cat(freqs, freqs).
 
 For weight-space analysis, we need to compute:
-    B_Δ = Q_f @ R_Δ @ K_f.T
-where R_Δ is the relative-position rotation for offset Δ.
+    B_Δ[i, j] = Q_f[i] @ R(-Δ) @ K_f[j]
+where R(p) is the rotation at position p and Δ = t - s >= 0 is the
+relative offset (query position t, key position s). Derivation: the model
+rotates q by R(t) and k by R(s); the logit is
+    (R(t) q) · (R(s) k) = q^T R(t)^T R(s) k = q^T R(s - t) k = q^T R(-Δ) k.
 """
 
 import torch
@@ -40,31 +47,33 @@ def compute_rotation_matrix(
 ) -> torch.Tensor:
     """
     Compute the full rotation matrix R_Δ for relative position offset Δ.
-    
-    This is the block-diagonal matrix where each 2x2 block is:
-        [[cos(Δ * freq), -sin(Δ * freq)],
-         [sin(Δ * freq),  cos(Δ * freq)]]
-    
+
+    HF Gemma-2 rotate_half convention: dimension i pairs with i + half
+    (half = head_dim // 2), both rotating with freqs[i]:
+        R[i, i]           =  cos(Δ * freq_i)
+        R[i, i + half]    = -sin(Δ * freq_i)
+        R[i + half, i]    =  sin(Δ * freq_i)
+        R[i + half, i+half] = cos(Δ * freq_i)
+
     Args:
-        delta: Relative position offset (t - s)
+        delta: Position offset (signed; pass -Δ for the key-side rotation)
         freqs: [head_dim // 2] frequency values
-        
+
     Returns: [head_dim, head_dim] rotation matrix
     """
     angles = delta * freqs.to(device=device, dtype=dtype)
     cos_angles = torch.cos(angles)
     sin_angles = torch.sin(angles)
-    
-    head_dim = len(freqs) * 2
-    R = torch.zeros(head_dim, head_dim, device=device, dtype=dtype)
-    
-    for i, (c, s) in enumerate(zip(cos_angles, sin_angles)):
-        idx = i * 2
-        R[idx, idx] = c
-        R[idx, idx + 1] = -s
-        R[idx + 1, idx] = s
-        R[idx + 1, idx + 1] = c
-    
+
+    half = len(freqs)
+    R = torch.zeros(2 * half, 2 * half, device=device, dtype=dtype)
+
+    idx = torch.arange(half, device=device)
+    R[idx, idx] = cos_angles
+    R[idx, idx + half] = -sin_angles
+    R[idx + half, idx] = sin_angles
+    R[idx + half, idx + half] = cos_angles
+
     return R
 
 
@@ -75,35 +84,35 @@ def apply_rope_rotation_to_vectors(
 ) -> torch.Tensor:
     """
     Efficiently apply RoPE rotation to a batch of vectors.
-    
-    Instead of materializing the full rotation matrix, we use the paired
-    rotation formula directly (same as HF apply_rotary_pos_emb).
-    
+
+    Uses the HF rotate_half (half-split) convention: dimension i pairs with
+    i + head_dim/2, both rotating with freqs[i]. Equivalent to HF's
+        x * cos + rotate_half(x) * sin
+    at position `delta` (cos/sin = cat(cos_a, cos_a), cat(sin_a, sin_a)).
+
     Args:
         vectors: [N, head_dim] vectors to rotate
-        delta: Relative position offset
+        delta: Position offset (signed)
         freqs: [head_dim // 2] frequencies
-        
+
     Returns: [N, head_dim] rotated vectors
     """
     device = vectors.device
     dtype = vectors.dtype
-    
+
     angles = (delta * freqs).to(device=device, dtype=dtype)
-    cos_angles = torch.cos(angles)
-    sin_angles = torch.sin(angles)
-    
-    # Reshape to pairs: [N, head_dim//2, 2]
-    x = vectors.view(vectors.shape[0], -1, 2)
-    
-    # Apply rotation: x0' = x0*cos - x1*sin, x1' = x0*sin + x1*cos
-    x0, x1 = x[..., 0], x[..., 1]
-    x_rot = torch.stack([
-        x0 * cos_angles - x1 * sin_angles,
-        x0 * sin_angles + x1 * cos_angles
+    cos_a = torch.cos(angles)
+    sin_a = torch.sin(angles)
+
+    half = vectors.shape[-1] // 2
+    x1 = vectors[..., :half]
+    x2 = vectors[..., half:]
+
+    # x1' = x1*cos - x2*sin, x2' = x2*cos + x1*sin  (rotate_half convention)
+    return torch.cat([
+        x1 * cos_a - x2 * sin_a,
+        x2 * cos_a + x1 * sin_a,
     ], dim=-1)
-    
-    return x_rot.view(vectors.shape)
 
 
 def compute_rotated_affinity_matrix(
@@ -115,26 +124,31 @@ def compute_rotated_affinity_matrix(
 ) -> torch.Tensor:
     """
     Compute position-modulated affinity matrix B_Δ.
-    
-    B_Δ[i,j] = (Q_f[i] @ R_Δ @ K_f[j]) * scale
-    
-    Efficient: rotate K_f vectors, then compute dot products.
-    
+
+    B_Δ[i,j] = (Q_f[i] @ R(-Δ) @ K_f[j]) * scale
+
+    Sign derivation: the model rotates the query at position t by R(t) and
+    the key at position s <= t by R(s). The realized logit is
+        (R(t) q) · (R(s) k) = q^T R(t)^T R(s) k = q^T R(s - t) k
+                            = q^T R(-Δ) k,  with Δ = t - s >= 0.
+    So keys are rotated by -Δ (equivalently queries by +Δ; identical since
+    (R(Δ) q) · k = q · (R(-Δ) k)). Callers pass positive Δ = t - s.
+
     Args:
         Q_f: [n_features, head_dim] query features in Q-space
         K_f: [n_features, head_dim] key features in K-space
-        delta: Relative position offset
+        delta: Relative position offset Δ = t - s (>= 0)
         freqs: RoPE frequencies
         scale: Attention scaling factor
-        
+
     Returns: [n_features, n_features] affinity matrix
     """
-    # Rotate keys by Δ (equivalent to rotating queries by -Δ)
-    K_f_rotated = apply_rope_rotation_to_vectors(K_f, delta, freqs)
-    
+    # Rotate keys by -Δ (see sign derivation in docstring)
+    K_f_rotated = apply_rope_rotation_to_vectors(K_f, -delta, freqs)
+
     # Compute affinity
     B_delta = (Q_f @ K_f_rotated.T) * scale
-    
+
     return B_delta
 
 
@@ -182,21 +196,22 @@ def compute_frequency_band_energy(
     Args:
         vectors: [N, head_dim] vectors (Q or K features)
         n_bands: Number of frequency bands to partition into
-        
+
     Returns: [N, n_bands] energy per band
     """
-    # Reshape to pairs: [N, head_dim//2, 2]
-    x = vectors.view(vectors.shape[0], -1, 2)
-    n_pairs = x.shape[1]
+    # rotate_half convention: pair i = (dim i, dim i + half), freq = freqs[i]
+    half = vectors.shape[-1] // 2
+    pair_energy = vectors[:, :half] ** 2 + vectors[:, half:] ** 2  # [N, half]
+    n_pairs = pair_energy.shape[1]
     pairs_per_band = n_pairs // n_bands
-    
+
     energies = []
     for b in range(n_bands):
         start = b * pairs_per_band
         end = start + pairs_per_band if b < n_bands - 1 else n_pairs
-        band_energy = (x[:, start:end, :] ** 2).sum(dim=(1, 2))
+        band_energy = pair_energy[:, start:end].sum(dim=1)
         energies.append(band_energy)
-    
+
     return torch.stack(energies, dim=1)
 
 

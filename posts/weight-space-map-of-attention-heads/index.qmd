@@ -3,7 +3,7 @@ title: "A Weight-Space Map of Attention Heads in Gemma-2 (with SAEs)"
 subtitle: "Lab notes on mechanistic interpretability without activations"
 author: "Shubham Srivastava"
 date: "2026-03-22"
-date-modified: "2026-03-28"
+date-modified: "2026-06-14"
 categories: [mechanistic-interpretability, gemma-2, sae, attention-heads]
 description: "Can we learn something useful about attention heads without sampling new activations? This post uses Gemma-2 2B and Gemma Scope residual-stream SAEs to build a weight-space map of routing and writing behavior."
 image: figs/hero.png
@@ -28,6 +28,28 @@ require experiments, which is why the later causal section is a preview.
 
 ::: {.callout-note appearance="simple"}
 [**Code**](https://github.com/shubhamx64/residual-thoughts-blog/tree/main/code/weight-space-map) -- snapshot of the analysis pipeline accompanying this post.
+:::
+
+::: {.callout-important}
+## Errata (2026-06-14): some claims below are retracted
+After publishing, I found **three pipeline bugs** -- RMSNorm gamma folding
+(missing the $+1$), the RoPE pairing convention, and validating against the
+wrong (post-layernorm) activations. After fixing them and re-running, two
+headline claims on this page **do not hold**:
+
+- The **late-layer "anti-predictive regime" (Regime 3) was an artifact.** Every
+  layer is solidly predictive once the bugs are fixed (grand-mean Spearman
+  $\rho$ rises from $+0.011$ to $+0.229$, every layer positive). There is no
+  anti-predictive regime.
+- The **unique Layer-6 selectivity spike is overstated** -- the spike survives
+  but L8/L12/L14/L22 share the band, and the identity-routing peak is actually
+  at L10.
+
+The Layer-23 causal result still replicates, but its explanation changes. The
+corrected map, two new studies (an SAE-checkpoint diagnostic at L13 and a
+dictionary-free dual-basis comparison), and the full numbers are in the
+follow-up: [**Correcting the Weight-Space Map**](../correcting-the-weight-space-map/).
+The body below is left as originally published for the record.
 :::
 
 ::: {.callout-tip}

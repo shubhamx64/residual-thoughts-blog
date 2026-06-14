@@ -50,18 +50,21 @@ def extract_layer_weights(
     fold_gamma: bool = True,
     device: str = "cpu",
     dtype: torch.dtype = torch.float32,
+    fold_mode: str = "one_plus_gamma",
 ) -> LayerWeights:
     """
     Extract attention weights from a layer with proper shaping.
-    
+
     Args:
         model: HuggingFace Gemma2ForCausalLM model
         layer_idx: Layer index to extract
         config: Model configuration
-        fold_gamma: Whether to fold RMSNorm gamma into Q/K/V weights
+        fold_gamma: Whether to fold RMSNorm (1 + gamma) into Q/K/V weights
         device: Target device
         dtype: Target dtype
-        
+        fold_mode: "one_plus_gamma" (correct, matches Gemma2RMSNorm) or
+            "legacy_gamma" (pre-fix W * gamma, for errata comparisons only)
+
     Returns:
         LayerWeights dataclass with all processed weights
     """
@@ -94,14 +97,22 @@ def extract_layer_weights(
     gamma_in = layer.input_layernorm.weight.detach().to(device=device, dtype=dtype)
     gamma_post = layer.post_attention_layernorm.weight.detach().to(device=device, dtype=dtype)
     
-    # Fold gamma into Q/K/V if requested
-    # RMSNorm: y = x * gamma / rms(x)
-    # The gamma acts as element-wise scaling on the input dimensions
-    # So effective weight = W @ diag(gamma) = W * gamma (broadcast over last dim)
+    # Fold RMSNorm scale into Q/K/V if requested
+    # HF Gemma2RMSNorm: y = (x / rms(x)) * (1 + gamma)   <-- note the +1!
+    # (modeling_gemma2.py: output * (1.0 + self.weight))
+    # Effective weight = W @ diag(1 + gamma) (broadcast over last dim)
     if fold_gamma:
-        W_Q = W_Q * gamma_in.view(1, 1, d_model)
-        W_K = W_K * gamma_in.view(1, 1, d_model)
-        W_V = W_V * gamma_in.view(1, 1, d_model)
+        if fold_mode == "one_plus_gamma":
+            gamma_scale = (1.0 + gamma_in).view(1, 1, d_model)
+        elif fold_mode == "legacy_gamma":
+            # Pre-fix behavior (missing the +1); kept ONLY so archived
+            # results can be reproduced for before/after errata comparisons.
+            gamma_scale = gamma_in.view(1, 1, d_model)
+        else:
+            raise ValueError(f"Unknown fold_mode: {fold_mode}")
+        W_Q = W_Q * gamma_scale
+        W_K = W_K * gamma_scale
+        W_V = W_V * gamma_scale
     
     return LayerWeights(
         layer_idx=layer_idx,
@@ -209,30 +220,34 @@ class WeightExtractor:
         model: nn.Module,
         config: Gemma2Config = GEMMA2_CONFIG,
         fold_gamma: bool = True,
+        fold_mode: Optional[str] = None,
     ):
         self.model = model
         self.config = config
         self.fold_gamma = fold_gamma
-        self._cache: Dict[Tuple[int, str, str, bool], LayerWeights] = {}
-    
+        # Default fold_mode from config (one_plus_gamma unless overridden)
+        self.fold_mode = fold_mode or getattr(config, "gamma_fold_mode", "one_plus_gamma")
+        self._cache: Dict[Tuple[int, str, str, bool, str], LayerWeights] = {}
+
     def get_layer(
         self,
         layer_idx: int,
         device: str = "cpu",
         dtype: torch.dtype = torch.float32,
     ) -> LayerWeights:
-        """Get weights for a layer (cached by layer_idx, device, dtype, fold_gamma)."""
+        """Get weights for a layer (cached by layer_idx, device, dtype, fold_gamma, fold_mode)."""
         # Use full cache key to avoid returning wrong device/dtype
-        cache_key = (layer_idx, device, str(dtype), self.fold_gamma)
-        
+        cache_key = (layer_idx, device, str(dtype), self.fold_gamma, self.fold_mode)
+
         if cache_key not in self._cache:
             self._cache[cache_key] = extract_layer_weights(
                 self.model, layer_idx, self.config,
                 fold_gamma=self.fold_gamma,
                 device=device,
                 dtype=dtype,
+                fold_mode=self.fold_mode,
             )
-        
+
         return self._cache[cache_key]
     
     def clear_cache(self):

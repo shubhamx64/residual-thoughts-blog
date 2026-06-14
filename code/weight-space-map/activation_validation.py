@@ -60,6 +60,7 @@ class ActivationCache:
         self.clear()
     
     def clear(self):
+        self.residual_raw: Dict[int, torch.Tensor] = {}       # layer -> [batch, seq, d_model] RAW block input (pre-input_layernorm; SAE-native)
         self.residual_pre_attn: Dict[int, torch.Tensor] = {}  # layer -> [batch, seq, d_model]
         self.residual_post_attn: Dict[int, torch.Tensor] = {}  # layer -> [batch, seq, d_model] (after attn, before MLP)
         self.attention_logits: Dict[int, torch.Tensor] = {}    # layer -> [batch, n_heads, seq, seq]
@@ -85,7 +86,22 @@ def create_attention_hooks(model, cache: ActivationCache, target_layers: List[in
     
     for layer_idx in target_layers:
         layer = model.model.layers[layer_idx]
-        
+
+        # Hook 0: Capture RAW block input (before input_layernorm).
+        # This is the stream Gemma Scope residual SAEs were trained on
+        # (resid_post of the previous block). The post-norm stream captured
+        # by Hook 1 is NOT SAE-native: RMSNorm rescales each token to RMS=1
+        # and applies (1+gamma), a mismatch that grows with depth.
+        def make_layer_pre_hook(layer_idx):
+            def hook(module, args, kwargs):
+                hidden = args[0] if args else kwargs.get('hidden_states')
+                if hidden is not None:
+                    cache.residual_raw[layer_idx] = hidden.detach()
+            return hook
+
+        h = layer.register_forward_pre_hook(make_layer_pre_hook(layer_idx), with_kwargs=True)
+        handles.append(h)
+
         # Hook 1: Capture pre-attention residual
         def make_pre_attn_hook(layer_idx):
             def hook(module, args, kwargs):
@@ -702,13 +718,15 @@ class ActivationValidator:
         config: Optional[ValidationConfig] = None,
         analysis_config: Optional[AnalysisConfig] = None,
         qk_features: Optional[int] = None,  # SAE features for QK routing (default from config)
+        basis: str = "sae",  # "sae" (Gemma Scope decoders) or "token" (tied embed/unembed)
     ):
         self.model = model
         self.tokenizer = tokenizer
-        self.sae_manager = sae_manager
+        self.sae_manager = sae_manager  # SAEManager or TokenBasisManager
         self.analysis_results = analysis_results
         self.config = config or ValidationConfig()
         self.analysis_config = analysis_config or AnalysisConfig()
+        self.basis = basis
         
         self.cache = ActivationCache()
         self.device = next(model.parameters()).device
@@ -730,6 +748,11 @@ class ActivationValidator:
     
     def _get_feature_indices(self, sae_layer: int) -> torch.Tensor:
         """Get the feature indices used for analysis (per-layer, matching analysis pipeline)."""
+        if self.basis == "token":
+            # Token basis: indices are token ids (labeling/reporting only;
+            # encode() already returns subset-sized coefficients)
+            return self.sae_manager.get_features(sae_layer).feature_indices
+
         if sae_layer in self._feature_indices_cache:
             return self._feature_indices_cache[sae_layer]
         
@@ -742,7 +765,40 @@ class ActivationValidator:
         
         self._feature_indices_cache[sae_layer] = indices
         return indices
-    
+
+    def _encode_raw(self, layer_idx: int, sae_layer: int, feature_indices: Optional[torch.Tensor] = None):
+        """
+        Encode the RAW block input (SAE-native stream) with the SAE.
+
+        Returns:
+            (acts, inv_rms) where:
+            - acts: [seq, n_features] SAE activations of the raw residual,
+              subset-indexed if feature_indices is given
+            - inv_rms: [seq, 1] = 1/rms(x_raw) per token, matching HF
+              Gemma2RMSNorm (rsqrt(mean(x^2) + 1e-6))
+            Returns (None, None) if no raw residual was captured.
+
+        Coordinate convention: the model computes
+            x_hat = (x_raw / rms(x_raw)) * (1 + gamma)
+        before Q/K/V. B matrices are built with fold_gamma=True (the (1+gamma)
+        is folded into the weights), so the remaining per-token factor is
+        1/rms, which the caller applies to the activations:
+            predicted_logit = (a_t / rms_t)^T B (a_s / rms_s)
+        Known approximation: the SAE decoder bias b_dec is dropped from the
+        prediction (its contribution varies with key position via 1/rms_s).
+        """
+        raw = self.cache.residual_raw.get(layer_idx)
+        if raw is None:
+            return None, None
+        raw = raw[0].float()  # [seq, d_model]
+        inv_rms = torch.rsqrt(raw.pow(2).mean(-1, keepdim=True) + 1e-6)  # [seq, 1]
+        acts = self.sae_manager.encode(raw, sae_layer)  # [seq, n_features]
+        # Token basis: encode() already returns subset-sized dense
+        # logit-lens coefficients; no further subsetting
+        if feature_indices is not None and self.basis == "sae":
+            acts = acts[:, feature_indices]
+        return acts, inv_rms
+
     def compute_QK_features(self, layer_idx: int, head_idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Compute Q_f and K_f feature projections for a head.
@@ -756,21 +812,33 @@ class ActivationValidator:
         
         # Get SAE layer for this attention layer
         sae_layer = GEMMA2_CONFIG.get_sae_layer_for_attn(layer_idx)
-        feature_indices = self._get_feature_indices(sae_layer)
+
+        if self.basis == "token":
+            # Token basis: already centered + RMS-calibrated; same basis at
+            # every layer. decoder_subset is [n_subset, d_model] -> transpose
+            # to match the [d_model, n_subset] layout used below.
+            feats = self.sae_manager.get_features(sae_layer, device=str(self.device))
+            decoder_subset = feats.decoder_subset.T.to(self.device).float()
+        else:
+            feature_indices = self._get_feature_indices(sae_layer)
+
+            # Get SAE decoder directions for subset features
+            sae_decoder = self.sae_manager.get_decoder(sae_layer)  # [d_model, n_sae_features]
+            decoder_subset = sae_decoder[:, feature_indices]  # [d_model, n_subset]
+
+            # Match RMS normalization + sqrt(hidden_size) scaling from analysis pipeline
+            if GEMMA2_CONFIG.normalize_decoder_directions:
+                hidden_size = GEMMA2_CONFIG.hidden_size
+                decoder_subset = F.normalize(decoder_subset, dim=0) * (hidden_size ** 0.5)
         
-        # Get SAE decoder directions for subset features
-        sae_decoder = self.sae_manager.get_decoder(sae_layer)  # [d_model, n_sae_features]
-        decoder_subset = sae_decoder[:, feature_indices]  # [d_model, n_subset]
-        
-        # Match RMS normalization + sqrt(hidden_size) scaling from analysis pipeline
-        if GEMMA2_CONFIG.normalize_decoder_directions:
-            hidden_size = GEMMA2_CONFIG.hidden_size
-            decoder_subset = F.normalize(decoder_subset, dim=0) * (hidden_size ** 0.5)
-        
-        # Use fold_gamma=False since our hook captures post-layernorm residual
+        # fold_gamma=True: B operates on raw-residual coordinates. The
+        # (1+gamma) RMSNorm scale is folded into W_Q/W_K; the remaining
+        # per-token 1/rms(x_t) factor is applied to the SAE activation
+        # vectors at validation time (see _encode_raw). This matches how
+        # the analysis pipeline builds its B matrices.
         layer_weights = extract_layer_weights(
-            self.model, layer_idx, GEMMA2_CONFIG, 
-            fold_gamma=False, device=str(self.device), dtype=torch.float32
+            self.model, layer_idx, GEMMA2_CONFIG,
+            fold_gamma=True, device=str(self.device), dtype=torch.float32
         )
         W_Q, W_K, W_V = get_qkv_for_head(layer_weights, head_idx, GEMMA2_CONFIG)
         
@@ -819,8 +887,10 @@ class ActivationValidator:
                 # No rotation needed for delta=0
                 B = (Q_f @ K_f.T) * scale
             else:
-                # RoPE rotation convention: we tested both +delta and -delta
-                # Empirically, +delta gives better correlations, so we use that
+                # Sign convention (derived, not empirical): query at t gets
+                # R(t), key at s gets R(s); logit = q^T R(s-t) k = q^T R(-Δ) k
+                # with Δ = t - s >= 0. compute_rotated_affinity_matrix rotates
+                # keys by -Δ internally; we pass positive Δ here.
                 B = compute_rotated_affinity_matrix(Q_f, K_f, delta, freqs, scale)
             
             # Apply softcap if configured
@@ -877,13 +947,17 @@ class ActivationValidator:
         Returns:
             RoutingValidationResult
         """
+        # Seed key sampling so before/after A/B comparisons aren't polluted
+        # by sampling noise (validate_routing_correlation uses np.random.choice)
+        np.random.seed(layer_idx * 100 + head_idx)
+
         # Get or compute B matrix
         B = self.get_B_matrix(layer_idx, head_idx)
-        
+
         # Get SAE layer for this attention layer (method is on Gemma2Config)
         from config import GEMMA2_CONFIG
         sae_layer = GEMMA2_CONFIG.get_sae_layer_for_attn(layer_idx)
-        
+
         all_results = []
         
         for prompt in prompts:
@@ -899,19 +973,13 @@ class ActivationValidator:
                 with torch.no_grad():
                     outputs = self.model(**inputs, output_attentions=True)
                 
-                # Get pre-attention residual and encode with SAE
-                residual = self.cache.residual_pre_attn.get(layer_idx)
-                if residual is None:
-                    continue
-                
-                residual = residual[0]  # Remove batch dim: [seq_len, d_model]
-                
-                # Encode with SAE
-                sae_acts_full = self.sae_manager.encode(residual, sae_layer)  # [seq_len, all_features]
-                
-                # Subset to only features used in B matrix
+                # Encode RAW block input with SAE (SAE-native), rms-scale
+                # per token: predicted logit = (a_t/rms_t)^T B (a_s/rms_s)
                 feature_indices = self._get_feature_indices(sae_layer)
-                sae_acts = sae_acts_full[:, feature_indices]  # [seq_len, n_subset_features]
+                sae_acts, inv_rms = self._encode_raw(layer_idx, sae_layer, feature_indices)
+                if sae_acts is None:
+                    continue
+                sae_acts = sae_acts * inv_rms  # [seq_len, n_subset_features]
                 
                 # Get attention logits for this head
                 # outputs.attentions is tuple of [batch, n_heads, seq, seq] per layer
@@ -1040,9 +1108,13 @@ class ActivationValidator:
         1. RoPE rotation effects at different distances
         2. Per-query correlation (avoids cross-row softmax artifacts)
         """
+        # Seed key sampling so before/after A/B comparisons aren't polluted
+        # by sampling noise (validate_routing_rope_aware uses np.random.choice)
+        np.random.seed(layer_idx * 100 + head_idx)
+
         # Get or compute RoPE-aware B matrices per distance bin
         B_by_distance = self.get_B_matrices_by_distance(layer_idx, head_idx)
-        
+
         # Get SAE layer for this attention layer
         from config import GEMMA2_CONFIG
         sae_layer = GEMMA2_CONFIG.get_sae_layer_for_attn(layer_idx)
@@ -1059,18 +1131,16 @@ class ActivationValidator:
                 with torch.no_grad():
                     outputs = self.model(**inputs, output_attentions=True)
                 
-                residual = self.cache.residual_pre_attn.get(layer_idx)
-                if residual is None:
-                    continue
-                
-                residual = residual[0]
-                
-                sae_acts_full = self.sae_manager.encode(residual, sae_layer)
+                # Encode RAW block input with SAE (SAE-native), rms-scale
+                # per token: predicted logit = (a_t/rms_t)^T B (a_s/rms_s)
                 feature_indices = self._get_feature_indices(sae_layer)
-                sae_acts = sae_acts_full[:, feature_indices]
-                
+                sae_acts, inv_rms = self._encode_raw(layer_idx, sae_layer, feature_indices)
+                if sae_acts is None:
+                    continue
+                sae_acts = sae_acts * inv_rms
+
                 attn_weights = outputs.attentions[layer_idx][0, head_idx]
-                
+
                 result = validate_routing_rope_aware(
                     sae_activations=sae_acts,
                     B_by_distance=B_by_distance,
@@ -1216,17 +1286,18 @@ class ActivationValidator:
         if GEMMA2_CONFIG.normalize_decoder_directions:
             decoder_subset = F.normalize(decoder_subset, dim=1) * (GEMMA2_CONFIG.hidden_size ** 0.5)
         
-        # Get layer weights
+        # fold_gamma=True: (1+gamma) folded into W_V so the circuit operates
+        # on raw-residual coordinates (paired with raw + rms-scaled inputs)
         layer_weights = extract_layer_weights(
             self.model, layer_idx, GEMMA2_CONFIG,
-            fold_gamma=False, device=str(self.device), dtype=torch.float32
+            fold_gamma=True, device=str(self.device), dtype=torch.float32
         )
-        
+
         # Get W_V and W_O for this head
         kv_group = GEMMA2_CONFIG.query_to_kv_group(head_idx)
         W_V = layer_weights.W_V[kv_group].to(self.device)
         W_O = layer_weights.W_O[head_idx].to(self.device)
-        
+
         # Compute write vectors
         write_vectors = compute_write_vectors_fast(decoder_subset, W_V, W_O)
         
@@ -1270,12 +1341,13 @@ class ActivationValidator:
         if GEMMA2_CONFIG.normalize_decoder_directions:
             D = F.normalize(D, dim=0) * (GEMMA2_CONFIG.hidden_size ** 0.5)
         
-        # Get layer weights
+        # fold_gamma=True: (1+gamma) folded into W_V so the circuit operates
+        # on raw-residual coordinates (paired with raw + rms-scaled inputs)
         layer_weights = extract_layer_weights(
             self.model, layer_idx, GEMMA2_CONFIG,
-            fold_gamma=False, device=str(self.device), dtype=torch.float32
+            fold_gamma=True, device=str(self.device), dtype=torch.float32
         )
-        
+
         # Get W_V and W_O for this head
         # W_V: [head_dim, d_model], W_O: [d_model, head_dim]
         kv_group = GEMMA2_CONFIG.query_to_kv_group(head_idx)
@@ -1377,9 +1449,13 @@ class ActivationValidator:
         # Note: skip normalization for full decoder since we want accurate reconstruction
         
         # Get OV circuit directly (work in residual space, not feature space)
+        # fold_gamma=True: (1+gamma) folded into W_V; inputs are the raw
+        # residual reconstruction scaled by per-token 1/rms (see below).
+        # Note: actual = attention_output difference, which is captured
+        # BEFORE post_attention_layernorm -- exactly what OV predicts.
         layer_weights = extract_layer_weights(
             self.model, layer_idx, GEMMA2_CONFIG,
-            fold_gamma=False, device=str(self.device), dtype=torch.float32
+            fold_gamma=True, device=str(self.device), dtype=torch.float32
         )
         kv_group = GEMMA2_CONFIG.query_to_kv_group(head_idx)
         W_V = layer_weights.W_V[kv_group].to(self.device)  # [head_dim, d_model]
@@ -1409,18 +1485,19 @@ class ActivationValidator:
                 with torch.no_grad():
                     outputs_baseline = self.model(**inputs, output_attentions=True)
                 
-                # Get pre-attention residual for SAE encoding
-                residual_pre = self.cache.residual_pre_attn.get(layer_idx)
-                if residual_pre is None:
+                # Get RAW block input for SAE encoding (SAE-native stream)
+                residual_raw = self.cache.residual_raw.get(layer_idx)
+                if residual_raw is None:
                     continue
-                residual_pre = residual_pre[0]  # [seq_len, d_model]
-                
+                residual_raw = residual_raw[0].float()  # [seq_len, d_model]
+                inv_rms = torch.rsqrt(residual_raw.pow(2).mean(-1, keepdim=True) + 1e-6)  # [seq_len, 1]
+
                 # Get baseline attention output (all heads combined)
                 attention_output_baseline = self.cache.attention_output.get(layer_idx)
                 if attention_output_baseline is None:
                     continue
                 attention_output_baseline = attention_output_baseline[0]  # [seq_len, d_model]
-                
+
                 # Get attention weights for the target head
                 attn_weights = outputs_baseline.attentions[layer_idx][0, head_idx].float()  # [seq_len, seq_len]
                 
@@ -1470,23 +1547,20 @@ class ActivationValidator:
             # This is exactly what THIS head contributed to the attention output
             head_attention_output = attention_output_baseline - attention_output_ablated  # [seq_len, d_model]
             
-            # Encode pre-attention residual with SAE (use ALL features)
-            sae_pre = self.sae_manager.encode(residual_pre, sae_layer)  # [seq_len, 16384]
-            
+            # Encode RAW residual with SAE (SAE-native; use ALL features)
+            sae_pre = self.sae_manager.encode(residual_raw, sae_layer)  # [seq_len, 16384]
+
             # === VECTORIZED: Compute all positions at once ===
-            # Create causal mask for attention (lower triangular)
-            # attn_weights is [seq_len, seq_len] where [t, s] is attention from t to s
-            # We only use positions 1 to seq_len-1 as queries (skip position 0)
-            
-            # For each query position t, compute weighted sum of source features
-            # aggregated[t] = Σ_s α[t,s] * sae_pre[s] for s <= t
-            # This is just: aggregated = attn_weights @ sae_pre (attention is already causal)
-            aggregated_features = attn_weights @ sae_pre  # [seq_len, n_features]
-            
-            # Reconstruct attended residuals from features WITH BIAS: [seq_len, d_model]
-            # Note: b_dec is the mean direction that SAE learned to add back
-            attended_residuals = aggregated_features @ D.T + b_dec  # [seq_len, n_features] @ [n_features, d_model] + [d_model]
-            
+            # The value input at source s is (x_raw_s / rms_s) * (1+gamma);
+            # (1+gamma) is folded into OV_circuit, so scale the raw-residual
+            # reconstruction by 1/rms_s. With x_raw_s ~= a_s @ D.T + b_dec:
+            #   attended[t] = sum_s alpha[t,s] * (a_s @ D.T + b_dec) / rms_s
+            # The b_dec term picks up the attention-weighted mean of 1/rms.
+            aggregated_features = attn_weights @ (sae_pre * inv_rms)  # [seq_len, n_features]
+            bias_scale = attn_weights @ inv_rms  # [seq_len, 1]
+
+            attended_residuals = aggregated_features @ D.T + bias_scale * b_dec  # [seq_len, d_model]
+
             # Apply OV circuit to all positions at once: [seq_len, d_model]
             pred_writes = attended_residuals @ OV_circuit  # [seq_len, d_model]
             
@@ -1559,9 +1633,11 @@ class ActivationValidator:
         # Note: skip normalization for full decoder since we want accurate reconstruction
         
         # Get layer weights and compute OV circuits for all heads
+        # fold_gamma=True: (1+gamma) folded into W_V; inputs are the raw
+        # residual reconstruction scaled by per-token 1/rms (see below)
         layer_weights = extract_layer_weights(
             self.model, layer_idx, GEMMA2_CONFIG,
-            fold_gamma=False, device=str(self.device), dtype=torch.float32
+            fold_gamma=True, device=str(self.device), dtype=torch.float32
         )
         
         OV_circuits = {}
@@ -1596,25 +1672,26 @@ class ActivationValidator:
                 with torch.no_grad():
                     outputs_baseline = self.model(**inputs, output_attentions=True)
                 
-                residual_pre = self.cache.residual_pre_attn.get(layer_idx)
-                if residual_pre is None:
+                residual_raw = self.cache.residual_raw.get(layer_idx)
+                if residual_raw is None:
                     continue
-                residual_pre = residual_pre[0]
-                
+                residual_raw = residual_raw[0].float()
+                inv_rms = torch.rsqrt(residual_raw.pow(2).mean(-1, keepdim=True) + 1e-6)  # [seq_len, 1]
+
                 attention_output_baseline = self.cache.attention_output.get(layer_idx)
                 if attention_output_baseline is None:
                     continue
                 attention_output_baseline = attention_output_baseline[0]
-                
+
                 # Get attention weights for all heads
                 all_attn_weights = outputs_baseline.attentions[layer_idx][0]  # [n_heads, seq_len, seq_len]
-                
+
             finally:
                 for h in handles:
                     h.remove()
-            
-            # Encode features once (use ALL features for accurate reconstruction)
-            sae_pre = self.sae_manager.encode(residual_pre, sae_layer)  # [seq_len, 16384]
+
+            # Encode RAW residual once (SAE-native; ALL features)
+            sae_pre = self.sae_manager.encode(residual_raw, sae_layer)  # [seq_len, 16384]
             
             # === Process each head with cached baseline ===
             for head_idx in head_indices:
@@ -1652,10 +1729,12 @@ class ActivationValidator:
                 # Head-isolated contribution
                 head_attention_output = attention_output_baseline - attention_output_ablated
                 
-                # Vectorized computation
+                # Vectorized computation (raw coords: scale by 1/rms_s;
+                # b_dec picks up the attention-weighted mean of 1/rms)
                 attn_weights = all_attn_weights[head_idx].float()  # Convert to float32
-                aggregated_features = attn_weights @ sae_pre
-                attended_residuals = aggregated_features @ D.T + b_dec  # Add decoder bias
+                aggregated_features = attn_weights @ (sae_pre * inv_rms)
+                bias_scale = attn_weights @ inv_rms  # [seq_len, 1]
+                attended_residuals = aggregated_features @ D.T + bias_scale * b_dec
                 pred_writes = attended_residuals @ OV_circuits[head_idx]
                 
                 pred_writes = pred_writes[1:]
@@ -1738,29 +1817,38 @@ class ActivationValidator:
                 with torch.no_grad():
                     outputs = self.model(**inputs, output_attentions=True)
                 
-                # Get pre-attention SAE activations
-                residual_pre = self.cache.residual_pre_attn.get(layer_idx)
-                if residual_pre is None:
+                # Get RAW block input (SAE-native) for both prediction
+                # sources and the ground-truth "before" state
+                residual_raw = self.cache.residual_raw.get(layer_idx)
+                if residual_raw is None:
                     continue
-                residual_pre = residual_pre[0]  # [seq_len, d_model]
-                
-                # Get post-layer SAE activations (after attention + MLP + residual)
+                residual_raw = residual_raw[0].float()  # [seq_len, d_model]
+                inv_rms = torch.rsqrt(residual_raw.pow(2).mean(-1, keepdim=True) + 1e-6)
+
+                # Get post-layer residual (after attention + MLP + residual);
+                # this is already the raw stream after the block, so the
+                # before/after delta is now coordinate-consistent
                 residual_post_layer = getattr(self.cache, 'residual_post_layer', {}).get(layer_idx)
                 if residual_post_layer is None:
                     # Fall back: use next layer's pre-attention if available
                     continue
                 residual_post_layer = residual_post_layer[0]  # [seq_len, d_model]
-                
+
                 # Encode with SAE (full features, then subset)
-                sae_pre_full = self.sae_manager.encode(residual_pre, sae_layer)
+                sae_pre_full = self.sae_manager.encode(residual_raw, sae_layer)
                 sae_post_full = self.sae_manager.encode(residual_post_layer, sae_layer)
-                
+
                 # Subset to features used in W2F
-                sae_pre = sae_pre_full[:, feature_indices]   # [seq_len, n_features]
-                sae_post = sae_post_full[:, feature_indices] # [seq_len, n_features]
-                
+                sae_pre_unscaled = sae_pre_full[:, feature_indices]   # [seq_len, n_features]
+                sae_post = sae_post_full[:, feature_indices]          # [seq_len, n_features]
+
+                # Prediction sources: rms-scaled (W2F is built from gamma-folded
+                # weights and expects (x_raw/rms) inputs). Ground truth stays
+                # UNscaled: it ranks SAE activations of actual raw states.
+                sae_pre = sae_pre_unscaled * inv_rms
+
                 # Actual deltas: how features changed through this layer
-                actual_deltas = sae_post - sae_pre  # [seq_len, n_features]
+                actual_deltas = sae_post - sae_pre_unscaled  # [seq_len, n_features]
                 
                 # Get attention weights for this head
                 attn_weights = outputs.attentions[layer_idx][0, head_idx]  # [seq_len, seq_len]
@@ -1885,12 +1973,13 @@ class ActivationValidator:
                 with torch.no_grad():
                     outputs_baseline = self.model(**inputs, output_attentions=True)
                 
-                # Get pre-attention residual (same for both passes)
-                residual_pre = self.cache.residual_pre_attn.get(layer_idx)
-                if residual_pre is None:
+                # Get RAW block input (same for both passes; SAE-native)
+                residual_raw = self.cache.residual_raw.get(layer_idx)
+                if residual_raw is None:
                     continue
-                residual_pre = residual_pre[0]  # [seq_len, d_model]
-                
+                residual_raw = residual_raw[0].float()  # [seq_len, d_model]
+                inv_rms = torch.rsqrt(residual_raw.pow(2).mean(-1, keepdim=True) + 1e-6)
+
                 # Get post-layer residual (baseline)
                 residual_post_baseline = getattr(self.cache, 'residual_post_layer', {}).get(layer_idx)
                 if residual_post_baseline is None:
@@ -1946,21 +2035,27 @@ class ActivationValidator:
             
             # === Compute head-isolated delta ===
             # The difference between baseline and ablated is exactly what this head contributed
+            # (a raw-stream delta, measured at the block output; adding it to
+            # the RAW block input is coordinate-consistent. Note this delta
+            # includes the head's effect routed through post_attention_layernorm
+            # and the within-block MLP -- pre-existing approximation.)
             head_contribution = residual_post_baseline - residual_post_ablated  # [seq_len, d_model]
-            
-            # Encode with SAE
-            sae_pre_full = self.sae_manager.encode(residual_pre, sae_layer)
-            
+
+            # Encode with SAE (raw stream, SAE-native)
+            sae_pre_full = self.sae_manager.encode(residual_raw, sae_layer)
+
             # For ground truth: what features changed due to THIS head
-            # We compute SAE(pre + head_contribution) - SAE(pre)
+            # We compute SAE(raw + head_contribution) - SAE(raw)
             # This approximates the actual feature delta from this head's write
-            sae_with_head = self.sae_manager.encode(residual_pre + head_contribution, sae_layer)
+            sae_with_head = self.sae_manager.encode(residual_raw + head_contribution, sae_layer)
             sae_without_head = sae_pre_full
-            
-            # Subset to features used in W2F
+
+            # Subset to features used in W2F. Prediction sources are rms-scaled
+            # (W2F built from gamma-folded weights expects (x_raw/rms) inputs);
+            # ground-truth encodings stay UNscaled.
             sae_with = sae_with_head[:, feature_indices]
             sae_without = sae_without_head[:, feature_indices]
-            sae_pre = sae_pre_full[:, feature_indices]
+            sae_pre = sae_pre_full[:, feature_indices] * inv_rms
             
             # Actual head-isolated deltas
             actual_head_deltas = sae_with - sae_without  # [seq_len, n_features]
@@ -2037,6 +2132,11 @@ class ActivationValidator:
         lines.append("[CONFIGURATION]")
         lines.append(f"  SAE features for QK routing: {self.qk_features} / {self._sae_width}")
         lines.append(f"  SAE features for OV_f:       {self.ov_features} / {self._sae_width} (full)")
+        lines.append("  Residual source: raw block input (SAE-native), per-token rms-scaled; gamma folding: 1+gamma")
+        if self.basis == "token":
+            lines.append(f"  Probe basis: token-embedding (tied embed/unembed, centered, subset={self.qk_features})")
+        else:
+            lines.append("  Probe basis: sae (Gemma Scope decoders)")
         lines.append("")
         
         # Routing validation results

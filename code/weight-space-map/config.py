@@ -78,9 +78,16 @@ class Gemma2Config:
     
     # SAE tap point convention:
     # - SAE trained on post-MLP residual stream
-    # - We fold pre-attention RMSNorm gamma into Q/K/V weights
+    # - We fold pre-attention RMSNorm (1 + gamma) into Q/K/V weights
+    #   (HF Gemma2RMSNorm: y = (x / rms(x)) * (1 + weight) -- note the +1)
     sae_tap_point: Literal["post_mlp_residual"] = "post_mlp_residual"
     fold_rmsnorm_gamma: bool = True
+
+    # Gamma folding mode:
+    # "one_plus_gamma": correct, matches Gemma2RMSNorm's (1 + weight) scaling
+    # "legacy_gamma":   pre-fix behavior (W * gamma), kept ONLY for before/after
+    #                   errata comparisons against archived results
+    gamma_fold_mode: Literal["one_plus_gamma", "legacy_gamma"] = "one_plus_gamma"
     
     # SAE layer offset for attention analysis:
     # post-MLP residual of block L is input to block L+1's attention
@@ -88,7 +95,7 @@ class Gemma2Config:
     # attention in block L, we might need SAE from layer L-1.
     # Set to 0 if SAE layer matches attention block directly.
     # Set to -1 if SAE layer_L is post-MLP of block L (most common).
-    sae_layer_offset_for_attn: int = -1  # Default: same layer
+    sae_layer_offset_for_attn: int = -1  # Default: previous layer's SAE (L-1)
     
     def get_sae_layer_for_attn(self, attn_layer_idx: int) -> int:
         """Get the SAE layer index to use for a given attention layer."""
