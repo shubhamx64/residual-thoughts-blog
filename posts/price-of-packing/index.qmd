@@ -1,0 +1,196 @@
+---
+title: "Polysemanticity Is Not the Price of Packing"
+subtitle: "A four-family, two-interface, pre-registered null -- with a positive control to prove the test could have seen the law"
+author: "Shubham Srivastava"
+date: "2026-07-05"
+categories: [mechanistic-interpretability, superposition, polysemanticity, mlp-neurons, negative-results]
+description: "Superposition has a folk corollary: the neurons that mix meanings should be the ones whose weight vectors crowd together. Tested dictionary-free on both faces of the MLP across four model families, it is false at neuron granularity -- and a planted-law control shows the pipeline would have caught it if it were true."
+toc-depth: 3
+---
+
+Superposition theory has a folk corollary that almost everyone reaches for at
+some point: the neurons that **mix meanings** ought to be the ones whose weight
+vectors **crowd together**, because crowding is what packing many features into
+few dimensions looks like. It is a clean, testable claim, and if it held, weight
+geometry alone would hand you a zero-data polysemanticity map -- find the crowded
+neurons, you have found the mixed ones.
+
+These are lab notes on testing that claim directly. Dictionary-free (no SAE),
+pre-registered, on both faces of the MLP, across four model families spanning
+gated and plain architectures. The short version: it is false at neuron
+granularity, on both interfaces, in every family -- and because a null is only
+worth as much as the instrument behind it, I built a positive control that
+recovers the same law at $\rho = +0.52$ when the law is planted by construction.
+
+::: {.callout-note appearance="simple"}
+[**Code**](https://github.com/shubhamx64/residual-thoughts-blog/tree/main/code/price-of-packing) -- the census (`census.py`, `census_read.py`), the statistics (`stats_e5.py`), and the two toy controls (`planted_control.py`, `toy_control.py`). All quantities come from a ~4-minute forward capture per model plus the weights; no activations are stored.
+:::
+
+::: {.callout-tip}
+## TL;DR
+- **The claim:** in superposition, geometrically crowded neurons should be the polysemantic ones. Made measurable without a dictionary -- mixing as regime entropy, crowding as neighbourhood density -- and tested with a partial correlation that removes the firing-rate confound.
+- **Write interface (output directions):** median partial $\rho$ between mixing and crowding is **+0.00 to +0.05** across four families. Null.
+- **Read interface (input directions):** the last place a neuron-level law could hide, since recruitment is decided on the read side. **-0.005 to +0.033**. Also null.
+- **The two interfaces disagree per neuron** ($\rho$ 0.21--0.47), so there is no single "this neuron is crowded" for mixing to track. That decorrelation is a finding, not a footnote.
+- **The only above-noise effects flip sign between families** -- Gemma-2's isolated neurons are its cleanest, TinyLlama's are its most mixed. That is the signature of noise around zero, not a weak law.
+- **Positive control:** the identical statistic recovers a *planted* crowding->mixing law at **+0.52**, and the coarse entropy proxy tracks ground-truth neuron mixing at **+0.83** in a trained toy. The instrument is not blind; there is simply nothing to see in the real models.
+- **Scope:** neurons, not features; task-regime mixing, not fine semantics; MLP, not attention. This bounds a shortcut, it does not refute feature-level superposition.
+:::
+
+## The claim, made measurable without a dictionary
+
+In superposition a network represents more features than it has dimensions by
+letting feature directions overlap. The intuitive reading at the *neuron* level:
+a neuron in a geometrically crowded neighbourhood is being asked to serve many
+masters, so it should fire across many unrelated contexts -- it should be
+polysemantic.
+
+Both sides become concrete without ever touching an SAE. Mixing is the Shannon
+entropy of a neuron's firing distribution over five task regimes (math,
+math-prose, code, code-prose, prose), with per-class rates normalised by token
+counts first:
+
+$$H_i = -\sum_{c} p_{ic}\,\log_2 p_{ic}, \qquad p_{ic} = \frac{r_{ic}}{\sum_{c'} r_{ic'}}.$$
+
+Crowding is the neighbourhood density of a neuron's weight vector -- the number
+of same-layer neurons within $|\cos| > 0.4$ of it (with $\max|\cos|$ and the
+mean of the top-10 neighbours as secondaries).
+
+Every correlation below is a **partial** Spearman $\rho$, controlling for log
+firing rate. A busy neuron is mechanically both more mixed and more likely to
+look crowded; rank-residualising on rate before correlating removes that
+confound. Neurons with fewer than 50 firing events are excluded. Seeds fixed;
+four families -- Qwen2.5-1.5B, Gemma-2-2B, Pythia-1.4B, TinyLlama-1.1B -- chosen
+so a Gemma-only quirk cannot masquerade as a law.
+
+## Everything hugs zero -- on both faces of the neuron
+
+::: {.callout-important}
+## Verdict: null, 4/4 families, both interfaces
+The median-across-layers partial $\rho$ between mixing and crowding is **+0.00 to +0.05 on the write interface** (down-projection columns) and **-0.005 to +0.033 on the read interface** (gate-projection rows) -- every one inside the pre-registered $|\rho| < 0.10$ null band. No couple-type stratum separates by more than 0.12 bits at matched firing rate. Robust across firing thresholds (q98/q99.5), a four-class entropy variant, and an outside-top-class proxy; the null *strengthens* when universal-neuron candidates are removed.
+:::
+
+```{=html}
+<figure style="margin:1.6rem 0;padding:0;">
+<svg viewBox="0 0 680 340" role="img" xmlns="http://www.w3.org/2000/svg" style="max-width:680px;width:100%;height:auto;font-family:inherit"><text x="176" y="20" font-size="13.5" font-weight="600" fill="#16202b">Partial ρ(regime mixing, crowding | firing rate) – eight real measurements, one positive control</text><rect x="229.8" y="40" width="107.6" height="260.0" fill="#eef1f3"/><line x1="283.6" x2="283.6" y1="40" y2="300.0" stroke="#5c6b7a" stroke-width="1"/><line x1="364.2" x2="364.2" y1="40" y2="300.0" stroke="#16202b" stroke-width="1" stroke-dasharray="4 4"/><text x="364.2" y="34" font-size="9.5" fill="#16202b" text-anchor="middle">detection floor +0.15</text><text x="283.6" y="326.0" font-size="10" fill="#5c6b7a" text-anchor="middle">null band |ρ| &lt; 0.1</text><text x="176.0" y="314.0" font-size="10" fill="#5c6b7a" text-anchor="middle">-0.2</text><text x="283.6" y="314.0" font-size="10" fill="#5c6b7a" text-anchor="middle">+0</text><text x="391.1" y="314.0" font-size="10" fill="#5c6b7a" text-anchor="middle">+0.2</text><text x="498.7" y="314.0" font-size="10" fill="#5c6b7a" text-anchor="middle">+0.4</text><text x="606.2" y="314.0" font-size="10" fill="#5c6b7a" text-anchor="middle">+0.6</text><text x="164" y="56.5" font-size="11.5" fill="#16202b" text-anchor="end">Qwen · write</text><line x1="283.6" x2="303.9" y1="53.0" y2="53.0" stroke="#2a78d6" stroke-width="1.5" opacity="0.5"/><circle cx="303.9" cy="53.0" r="5.5" fill="#2a78d6"/><text x="313.9" y="56.5" font-size="10" fill="#5c6b7a">+0.04</text><text x="164" y="82.5" font-size="11.5" fill="#16202b" text-anchor="end">Qwen · read</text><line x1="283.6" x2="298.7" y1="79.0" y2="79.0" stroke="#2a78d6" stroke-width="1.5" opacity="0.5"/><circle cx="298.7" cy="79.0" r="5.5" fill="#fff" stroke="#2a78d6" stroke-width="2"/><text x="308.7" y="82.5" font-size="10" fill="#5c6b7a">+0.03</text><text x="164" y="108.5" font-size="11.5" fill="#16202b" text-anchor="end">Gemma-2 · write</text><line x1="283.6" x2="312.5" y1="105.0" y2="105.0" stroke="#eda100" stroke-width="1.5" opacity="0.5"/><circle cx="312.5" cy="105.0" r="5.5" fill="#eda100"/><text x="322.5" y="108.5" font-size="10" fill="#5c6b7a">+0.05</text><text x="164" y="134.5" font-size="11.5" fill="#16202b" text-anchor="end">Gemma-2 · read</text><line x1="283.6" x2="295.6" y1="131.0" y2="131.0" stroke="#eda100" stroke-width="1.5" opacity="0.5"/><circle cx="295.6" cy="131.0" r="5.5" fill="#fff" stroke="#eda100" stroke-width="2"/><text x="305.6" y="134.5" font-size="10" fill="#5c6b7a">+0.02</text><text x="164" y="160.5" font-size="11.5" fill="#16202b" text-anchor="end">Pythia · write</text><line x1="283.6" x2="283.6" y1="157.0" y2="157.0" stroke="#4a3aa7" stroke-width="1.5" opacity="0.5"/><circle cx="283.6" cy="157.0" r="5.5" fill="#4a3aa7"/><text x="293.6" y="160.5" font-size="10" fill="#5c6b7a">+0.00</text><text x="164" y="186.5" font-size="11.5" fill="#16202b" text-anchor="end">Pythia · read</text><line x1="283.6" x2="281.1" y1="183.0" y2="183.0" stroke="#4a3aa7" stroke-width="1.5" opacity="0.5"/><circle cx="281.1" cy="183.0" r="5.5" fill="#fff" stroke="#4a3aa7" stroke-width="2"/><text x="291.1" y="186.5" font-size="10" fill="#5c6b7a">-0.00</text><text x="164" y="212.5" font-size="11.5" fill="#16202b" text-anchor="end">TinyLlama · write</text><line x1="283.6" x2="302.7" y1="209.0" y2="209.0" stroke="#1baf7a" stroke-width="1.5" opacity="0.5"/><circle cx="302.7" cy="209.0" r="5.5" fill="#1baf7a"/><text x="312.7" y="212.5" font-size="10" fill="#5c6b7a">+0.04</text><text x="164" y="238.5" font-size="11.5" fill="#16202b" text-anchor="end">TinyLlama · read</text><line x1="283.6" x2="301.6" y1="235.0" y2="235.0" stroke="#1baf7a" stroke-width="1.5" opacity="0.5"/><circle cx="301.6" cy="235.0" r="5.5" fill="#fff" stroke="#1baf7a" stroke-width="2"/><text x="311.6" y="238.5" font-size="10" fill="#5c6b7a">+0.03</text><line x1="176" x2="660" y1="248.0" y2="248.0" stroke="#d7dde2"/><text x="164" y="264.5" font-size="11.5" fill="#16202b" text-anchor="end">planted law (control)</text><line x1="283.6" x2="563.6" y1="261.0" y2="261.0" stroke="#e34948" stroke-width="1.5" opacity="0.5"/><rect x="558.1" y="255.5" width="11" height="11" rx="2" fill="#e34948"/><text x="573.6" y="264.5" font-size="10" fill="#5c6b7a">+0.52</text><text x="164" y="290.5" font-size="11.5" fill="#16202b" text-anchor="end">same control, shuffled</text><line x1="283.6" x2="301.9" y1="287.0" y2="287.0" stroke="#5c6b7a" stroke-width="1.5" opacity="0.5"/><rect x="296.4" y="281.5" width="11" height="11" rx="2" fill="#5c6b7a"/><text x="311.9" y="290.5" font-size="10" fill="#5c6b7a">+0.03</text><text x="176" y="334" font-size="10" fill="#5c6b7a">write interface ●</text><text x="306" y="334" font-size="10" fill="#5c6b7a">read interface ○</text></svg>
+<figcaption style="font-size:0.85rem;color:#6b7280;line-height:1.5;margin-top:0.6rem;">Each point is the median-across-layers partial correlation for one model on one interface. Filled = write, open = read. The grey band is the pre-registered null; the dashed line is the +0.15 threshold a real effect had to clear. Eight of eight real measurements sit in the band. The red square is the same statistic run on synthetic data with a crowding-to-mixing law planted by construction -- it lands at +0.52.</figcaption>
+</figure>
+```
+
+
+The write side was the natural place to look: a neuron's output direction is what
+collides in the residual stream. But recruitment is decided on the *read* side --
+whether a neuron fires is a property of its input weights, not its output. So the
+read interface was the last place a neuron-level packing law could hide. It does
+not hide there either. And the medians are not papering over a wide spread:
+
+```{=html}
+<figure style="margin:1.6rem 0;padding:0;">
+<svg viewBox="0 0 680 270" role="img" xmlns="http://www.w3.org/2000/svg" style="max-width:680px;width:100%;height:auto;font-family:inherit"><text x="120" y="20" font-size="13.5" font-weight="600" fill="#16202b">Every layer, not just the median – write and read density, four families</text><rect x="205.3" y="40" width="113.7" height="190.0" fill="#eef1f3"/><line x1="262.1" x2="262.1" y1="40" y2="230.0" stroke="#5c6b7a"/><line x1="557.7" x2="557.7" y1="40" y2="230.0" stroke="#e34948" stroke-width="1.5" stroke-dasharray="5 3"/><text x="557.7" y="34" font-size="9.5" fill="#e34948" text-anchor="middle">planted law +0.52</text><text x="148.4" y="244.0" font-size="10" fill="#5c6b7a" text-anchor="middle">-0.2</text><text x="262.1" y="244.0" font-size="10" fill="#5c6b7a" text-anchor="middle">+0</text><text x="375.8" y="244.0" font-size="10" fill="#5c6b7a" text-anchor="middle">+0.2</text><text x="489.5" y="244.0" font-size="10" fill="#5c6b7a" text-anchor="middle">+0.4</text><text x="603.2" y="244.0" font-size="10" fill="#5c6b7a" text-anchor="middle">+0.6</text><text x="108" y="67.2" font-size="11" fill="#16202b" text-anchor="end">Qwen2.5</text><circle cx="271.7" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="278.3" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="261.9" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="261.6" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="279.4" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="282.8" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="283.0" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="293.5" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="294.5" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="291.9" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="283.8" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="294.9" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="290.4" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="319.4" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="301.0" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="304.5" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="297.0" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="280.5" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="276.7" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="285.2" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="288.0" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="283.4" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="294.3" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="277.7" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="278.4" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="280.4" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="310.3" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="274.3" cy="59.8" r="2.6" fill="#2a78d6" opacity="0.55"/><circle cx="267.8" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="255.1" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="260.5" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="251.2" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="251.9" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="255.3" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="278.0" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="283.3" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="275.2" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="276.5" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="266.7" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="270.4" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="280.8" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="310.4" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="285.1" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="280.1" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="272.3" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="279.2" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="289.1" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="298.2" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="282.7" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="290.2" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="278.2" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="277.0" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="273.8" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="286.1" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="309.2" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><circle cx="300.7" cy="67.8" r="2.6" fill="#2a78d6" opacity="0.4"/><line x1="283.6" x2="283.6" y1="54.8" y2="72.8" stroke="#2a78d6" stroke-width="2.4"/><text x="108" y="114.8" font-size="11" fill="#16202b" text-anchor="end">Gemma</text><circle cx="269.0" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="333.0" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="278.8" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="296.6" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="287.4" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="306.5" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="316.7" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="290.3" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="295.3" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="291.4" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="294.2" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="294.9" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="283.1" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="286.9" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="272.0" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="280.7" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="277.1" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="285.3" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="285.0" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="288.7" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="294.0" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="316.6" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="308.0" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="302.3" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="318.5" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="338.3" cy="107.2" r="2.6" fill="#eda100" opacity="0.55"/><circle cx="185.2" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="253.2" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="275.6" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="283.4" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="269.3" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="289.0" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="266.6" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="244.6" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="265.2" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="268.4" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="268.1" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="266.7" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="271.6" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="279.2" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="268.6" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="270.6" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="276.4" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="280.5" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="274.1" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="276.1" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="279.4" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="279.3" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="291.0" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="300.0" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="328.3" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><circle cx="360.1" cy="115.2" r="2.6" fill="#eda100" opacity="0.4"/><line x1="292.7" x2="292.7" y1="102.2" y2="120.2" stroke="#eda100" stroke-width="2.4"/><text x="108" y="162.2" font-size="11" fill="#16202b" text-anchor="end">Pythia</text><circle cx="268.2" cy="154.8" r="2.6" fill="#4a3aa7" opacity="0.55"/><circle cx="266.3" cy="154.8" r="2.6" fill="#4a3aa7" opacity="0.55"/><circle cx="262.0" cy="154.8" r="2.6" fill="#4a3aa7" opacity="0.55"/><circle cx="266.4" cy="154.8" r="2.6" fill="#4a3aa7" opacity="0.55"/><circle cx="256.5" cy="154.8" r="2.6" fill="#4a3aa7" opacity="0.55"/><circle cx="255.6" cy="154.8" r="2.6" fill="#4a3aa7" opacity="0.55"/><circle cx="260.8" cy="154.8" r="2.6" fill="#4a3aa7" opacity="0.55"/><circle cx="256.8" cy="154.8" r="2.6" fill="#4a3aa7" opacity="0.55"/><circle cx="262.4" cy="154.8" r="2.6" fill="#4a3aa7" opacity="0.55"/><circle cx="261.3" cy="154.8" r="2.6" fill="#4a3aa7" opacity="0.55"/><circle cx="257.7" cy="154.8" r="2.6" fill="#4a3aa7" opacity="0.55"/><circle cx="254.2" cy="154.8" r="2.6" fill="#4a3aa7" opacity="0.55"/><circle cx="253.4" cy="154.8" r="2.6" fill="#4a3aa7" opacity="0.55"/><circle cx="263.8" cy="154.8" r="2.6" fill="#4a3aa7" opacity="0.55"/><circle cx="263.5" cy="154.8" r="2.6" fill="#4a3aa7" opacity="0.55"/><circle cx="259.4" cy="154.8" r="2.6" fill="#4a3aa7" opacity="0.55"/><circle cx="263.1" cy="154.8" r="2.6" fill="#4a3aa7" opacity="0.55"/><circle cx="264.0" cy="154.8" r="2.6" fill="#4a3aa7" opacity="0.55"/><circle cx="262.5" cy="154.8" r="2.6" fill="#4a3aa7" opacity="0.55"/><circle cx="263.7" cy="154.8" r="2.6" fill="#4a3aa7" opacity="0.55"/><circle cx="259.8" cy="154.8" r="2.6" fill="#4a3aa7" opacity="0.55"/><circle cx="258.1" cy="154.8" r="2.6" fill="#4a3aa7" opacity="0.55"/><circle cx="272.3" cy="154.8" r="2.6" fill="#4a3aa7" opacity="0.55"/><circle cx="337.8" cy="154.8" r="2.6" fill="#4a3aa7" opacity="0.55"/><circle cx="265.0" cy="162.8" r="2.6" fill="#4a3aa7" opacity="0.4"/><circle cx="259.1" cy="162.8" r="2.6" fill="#4a3aa7" opacity="0.4"/><circle cx="259.2" cy="162.8" r="2.6" fill="#4a3aa7" opacity="0.4"/><circle cx="259.3" cy="162.8" r="2.6" fill="#4a3aa7" opacity="0.4"/><circle cx="246.3" cy="162.8" r="2.6" fill="#4a3aa7" opacity="0.4"/><circle cx="253.8" cy="162.8" r="2.6" fill="#4a3aa7" opacity="0.4"/><circle cx="257.6" cy="162.8" r="2.6" fill="#4a3aa7" opacity="0.4"/><circle cx="255.4" cy="162.8" r="2.6" fill="#4a3aa7" opacity="0.4"/><circle cx="262.3" cy="162.8" r="2.6" fill="#4a3aa7" opacity="0.4"/><circle cx="260.1" cy="162.8" r="2.6" fill="#4a3aa7" opacity="0.4"/><circle cx="254.6" cy="162.8" r="2.6" fill="#4a3aa7" opacity="0.4"/><circle cx="252.8" cy="162.8" r="2.6" fill="#4a3aa7" opacity="0.4"/><circle cx="253.8" cy="162.8" r="2.6" fill="#4a3aa7" opacity="0.4"/><circle cx="261.0" cy="162.8" r="2.6" fill="#4a3aa7" opacity="0.4"/><circle cx="261.5" cy="162.8" r="2.6" fill="#4a3aa7" opacity="0.4"/><circle cx="257.4" cy="162.8" r="2.6" fill="#4a3aa7" opacity="0.4"/><circle cx="262.6" cy="162.8" r="2.6" fill="#4a3aa7" opacity="0.4"/><circle cx="262.0" cy="162.8" r="2.6" fill="#4a3aa7" opacity="0.4"/><circle cx="260.4" cy="162.8" r="2.6" fill="#4a3aa7" opacity="0.4"/><circle cx="261.6" cy="162.8" r="2.6" fill="#4a3aa7" opacity="0.4"/><circle cx="260.1" cy="162.8" r="2.6" fill="#4a3aa7" opacity="0.4"/><circle cx="259.6" cy="162.8" r="2.6" fill="#4a3aa7" opacity="0.4"/><circle cx="256.8" cy="162.8" r="2.6" fill="#4a3aa7" opacity="0.4"/><circle cx="272.5" cy="162.8" r="2.6" fill="#4a3aa7" opacity="0.4"/><line x1="262.2" x2="262.2" y1="149.8" y2="167.8" stroke="#4a3aa7" stroke-width="2.4"/><text x="108" y="209.8" font-size="11" fill="#16202b" text-anchor="end">TinyLlama</text><circle cx="317.8" cy="202.2" r="2.6" fill="#1baf7a" opacity="0.55"/><circle cx="267.8" cy="202.2" r="2.6" fill="#1baf7a" opacity="0.55"/><circle cx="270.6" cy="202.2" r="2.6" fill="#1baf7a" opacity="0.55"/><circle cx="270.0" cy="202.2" r="2.6" fill="#1baf7a" opacity="0.55"/><circle cx="267.5" cy="202.2" r="2.6" fill="#1baf7a" opacity="0.55"/><circle cx="270.0" cy="202.2" r="2.6" fill="#1baf7a" opacity="0.55"/><circle cx="284.9" cy="202.2" r="2.6" fill="#1baf7a" opacity="0.55"/><circle cx="303.3" cy="202.2" r="2.6" fill="#1baf7a" opacity="0.55"/><circle cx="300.4" cy="202.2" r="2.6" fill="#1baf7a" opacity="0.55"/><circle cx="304.6" cy="202.2" r="2.6" fill="#1baf7a" opacity="0.55"/><circle cx="282.4" cy="202.2" r="2.6" fill="#1baf7a" opacity="0.55"/><circle cx="282.1" cy="202.2" r="2.6" fill="#1baf7a" opacity="0.55"/><circle cx="297.4" cy="202.2" r="2.6" fill="#1baf7a" opacity="0.55"/><circle cx="296.9" cy="202.2" r="2.6" fill="#1baf7a" opacity="0.55"/><circle cx="277.0" cy="202.2" r="2.6" fill="#1baf7a" opacity="0.55"/><circle cx="275.5" cy="202.2" r="2.6" fill="#1baf7a" opacity="0.55"/><circle cx="274.1" cy="202.2" r="2.6" fill="#1baf7a" opacity="0.55"/><circle cx="276.2" cy="202.2" r="2.6" fill="#1baf7a" opacity="0.55"/><circle cx="279.2" cy="202.2" r="2.6" fill="#1baf7a" opacity="0.55"/><circle cx="283.5" cy="202.2" r="2.6" fill="#1baf7a" opacity="0.55"/><circle cx="292.9" cy="202.2" r="2.6" fill="#1baf7a" opacity="0.55"/><circle cx="317.5" cy="202.2" r="2.6" fill="#1baf7a" opacity="0.55"/><circle cx="132.1" cy="210.2" r="2.6" fill="#1baf7a" opacity="0.4"/><circle cx="265.5" cy="210.2" r="2.6" fill="#1baf7a" opacity="0.4"/><circle cx="265.0" cy="210.2" r="2.6" fill="#1baf7a" opacity="0.4"/><circle cx="264.1" cy="210.2" r="2.6" fill="#1baf7a" opacity="0.4"/><circle cx="266.5" cy="210.2" r="2.6" fill="#1baf7a" opacity="0.4"/><circle cx="268.5" cy="210.2" r="2.6" fill="#1baf7a" opacity="0.4"/><circle cx="277.7" cy="210.2" r="2.6" fill="#1baf7a" opacity="0.4"/><circle cx="295.1" cy="210.2" r="2.6" fill="#1baf7a" opacity="0.4"/><circle cx="296.2" cy="210.2" r="2.6" fill="#1baf7a" opacity="0.4"/><circle cx="287.8" cy="210.2" r="2.6" fill="#1baf7a" opacity="0.4"/><circle cx="306.8" cy="210.2" r="2.6" fill="#1baf7a" opacity="0.4"/><circle cx="278.7" cy="210.2" r="2.6" fill="#1baf7a" opacity="0.4"/><circle cx="290.6" cy="210.2" r="2.6" fill="#1baf7a" opacity="0.4"/><circle cx="294.0" cy="210.2" r="2.6" fill="#1baf7a" opacity="0.4"/><circle cx="282.0" cy="210.2" r="2.6" fill="#1baf7a" opacity="0.4"/><circle cx="280.8" cy="210.2" r="2.6" fill="#1baf7a" opacity="0.4"/><circle cx="281.4" cy="210.2" r="2.6" fill="#1baf7a" opacity="0.4"/><circle cx="273.5" cy="210.2" r="2.6" fill="#1baf7a" opacity="0.4"/><circle cx="274.8" cy="210.2" r="2.6" fill="#1baf7a" opacity="0.4"/><circle cx="285.8" cy="210.2" r="2.6" fill="#1baf7a" opacity="0.4"/><circle cx="297.6" cy="210.2" r="2.6" fill="#1baf7a" opacity="0.4"/><circle cx="328.8" cy="210.2" r="2.6" fill="#1baf7a" opacity="0.4"/><line x1="282.3" x2="282.3" y1="197.2" y2="215.2" stroke="#1baf7a" stroke-width="2.4"/><text x="262.1" y="264" font-size="10" fill="#5c6b7a" text-anchor="middle">each dot = one layer · thick tick = median · upper row write, lower row read</text></svg>
+<figcaption style="font-size:0.85rem;color:#6b7280;line-height:1.5;margin-top:0.6rem;">The medians are not hiding a wide spread: every individual layer's partial &rho; (write and read density), all four families. The cloud sits on zero at every depth. The red dashed line marks where the planted-law control lands -- the entire real distribution is an order of magnitude short of it.</figcaption>
+</figure>
+```
+
+
+## A neuron is not "in a crowded place." It is crowded per interface.
+
+The read-side test was not a redundant re-run of the write-side test, and the
+reason is a finding in itself. If a neuron simply occupied a crowded or an
+uncrowded region of the model, its read-crowding and write-crowding would move
+together -- the correlation would be near one. It is $\rho$ **0.21 to 0.47**.
+
+```{=html}
+<figure style="margin:1.6rem 0;padding:0;">
+<svg viewBox="0 0 680 210" role="img" xmlns="http://www.w3.org/2000/svg" style="max-width:680px;width:100%;height:auto;font-family:inherit"><text x="120" y="20" font-size="13.5" font-weight="600" fill="#16202b">Is a neuron “in a crowded place”? Read-vs-write crowding agreement per neuron</text><line x1="120.0" x2="120.0" y1="40" y2="180.0" stroke="#d7dde2"/><text x="120.0" y="194.0" font-size="10" fill="#5c6b7a" text-anchor="middle">0</text><line x1="245.0" x2="245.0" y1="40" y2="180.0" stroke="#d7dde2"/><text x="245.0" y="194.0" font-size="10" fill="#5c6b7a" text-anchor="middle">0.25</text><line x1="370.0" x2="370.0" y1="40" y2="180.0" stroke="#d7dde2"/><text x="370.0" y="194.0" font-size="10" fill="#5c6b7a" text-anchor="middle">0.5</text><line x1="495.0" x2="495.0" y1="40" y2="180.0" stroke="#d7dde2"/><text x="495.0" y="194.0" font-size="10" fill="#5c6b7a" text-anchor="middle">0.75</text><line x1="620.0" x2="620.0" y1="40" y2="180.0" stroke="#d7dde2"/><text x="620.0" y="194.0" font-size="10" fill="#5c6b7a" text-anchor="middle">1</text><line x1="620.0" x2="620.0" y1="40" y2="180.0" stroke="#16202b" stroke-dasharray="4 4"/><text x="620.0" y="34" font-size="9" fill="#16202b" text-anchor="end">“one place” = 1.0</text><text x="108" y="61.0" font-size="11" fill="#16202b" text-anchor="end">Qwen2.5</text><rect x="120" y="50.5" width="135.4" height="14" rx="3" fill="#2a78d6"/><text x="261.4" y="61.0" font-size="10.5" fill="#16202b">0.27</text><text x="108" y="96.0" font-size="11" fill="#16202b" text-anchor="end">Gemma</text><rect x="120" y="85.5" width="120.2" height="14" rx="3" fill="#eda100"/><text x="246.2" y="96.0" font-size="10.5" fill="#16202b">0.24</text><text x="108" y="131.0" font-size="11" fill="#16202b" text-anchor="end">Pythia</text><rect x="120" y="120.5" width="236.2" height="14" rx="3" fill="#4a3aa7"/><text x="362.2" y="131.0" font-size="10.5" fill="#16202b">0.47</text><text x="108" y="166.0" font-size="11" fill="#16202b" text-anchor="end">TinyLlama</text><rect x="120" y="155.5" width="106.7" height="14" rx="3" fill="#1baf7a"/><text x="232.7" y="166.0" font-size="10.5" fill="#16202b">0.21</text></svg>
+<figcaption style="font-size:0.85rem;color:#6b7280;line-height:1.5;margin-top:0.6rem;">Per-neuron agreement between read-side and write-side neighbourhood density, per family. Recruitment geometry and expression geometry are substantially independent properties of the same unit -- so there is no single scalar &lsquo;this neuron is crowded.&rsquo;</figcaption>
+</figure>
+```
+
+
+Recruitment geometry and expression geometry are substantially independent
+properties of the same unit. The folk picture assumes one geometric fact per
+neuron; there are at least two, they disagree, and neither predicts what the
+neuron actually does across regimes. That is the quiet mechanism behind the whole
+null.
+
+## The effects that clear the noise point in opposite directions
+
+A weak-but-real law would at least be *consistent*: crowded neurons a little more
+mixed in every family. Instead the largest excursions cancel. Across both
+interfaces the two measures that graze the band -- Gemma-2's write-side
+local-crowding at $+0.12$ and Pythia's read-side top-10 at $-0.12$ -- have
+opposite signs, one family each, two hundredths past a threshold chosen as the
+noise floor. The stratum medians tell the same story in a picture.
+
+```{=html}
+<figure style="margin:1.6rem 0;padding:0;">
+<svg viewBox="0 0 680 250" role="img" xmlns="http://www.w3.org/2000/svg" style="max-width:680px;width:100%;height:auto;font-family:inherit"><text x="120" y="20" font-size="13.5" font-weight="600" fill="#16202b">The only above-noise effects flip direction between families</text><line x1="137.1" x2="137.1" y1="40" y2="216.0" stroke="#d7dde2"/><text x="137.1" y="230.0" font-size="10" fill="#5c6b7a" text-anchor="middle">1.70</text><line x1="302.0" x2="302.0" y1="40" y2="216.0" stroke="#d7dde2"/><text x="302.0" y="230.0" font-size="10" fill="#5c6b7a" text-anchor="middle">1.80</text><line x1="467.0" x2="467.0" y1="40" y2="216.0" stroke="#d7dde2"/><text x="467.0" y="230.0" font-size="10" fill="#5c6b7a" text-anchor="middle">1.90</text><text x="108" y="65.5" font-size="11" fill="#16202b" text-anchor="end">Qwen2.5</text><line x1="343.7" x2="375.8" y1="62.0" y2="62.0" stroke="#2a78d6" stroke-width="2"/><circle cx="343.7" cy="62.0" r="5.5" fill="#fff" stroke="#2a78d6" stroke-width="2"/><circle cx="375.8" cy="62.0" r="5.5" fill="#2a78d6"/><text x="596" y="65.5" font-size="9.5" fill="#5c6b7a">crowded more mixed →</text><text x="108" y="109.5" font-size="11" fill="#16202b" text-anchor="end">Gemma</text><line x1="153.0" x2="316.9" y1="106.0" y2="106.0" stroke="#eda100" stroke-width="2"/><circle cx="153.0" cy="106.0" r="5.5" fill="#fff" stroke="#eda100" stroke-width="2"/><circle cx="316.9" cy="106.0" r="5.5" fill="#eda100"/><text x="596" y="109.5" font-size="9.5" fill="#5c6b7a">crowded more mixed →</text><text x="108" y="153.5" font-size="11" fill="#16202b" text-anchor="end">Pythia</text><line x1="330.6" x2="433.0" y1="150.0" y2="150.0" stroke="#4a3aa7" stroke-width="2"/><circle cx="330.6" cy="150.0" r="5.5" fill="#fff" stroke="#4a3aa7" stroke-width="2"/><circle cx="433.0" cy="150.0" r="5.5" fill="#4a3aa7"/><text x="596" y="153.5" font-size="9.5" fill="#5c6b7a">crowded more mixed →</text><text x="108" y="197.5" font-size="11" fill="#16202b" text-anchor="end">TinyLlama</text><line x1="557.0" x2="416.7" y1="194.0" y2="194.0" stroke="#1baf7a" stroke-width="2"/><circle cx="557.0" cy="194.0" r="5.5" fill="#fff" stroke="#1baf7a" stroke-width="2"/><circle cx="416.7" cy="194.0" r="5.5" fill="#1baf7a"/><text x="596" y="197.5" font-size="9.5" fill="#5c6b7a">← isolated more mixed</text><text x="120" y="244" font-size="10" fill="#5c6b7a">○ isolated neurons   ● crowded neurons · rate-matched median entropy (bits)</text></svg>
+<figcaption style="font-size:0.85rem;color:#6b7280;line-height:1.5;margin-top:0.6rem;">Rate-matched median mixing for a family's most-isolated vs most-crowded neurons. A universal law would lean every bar the same way. Gemma-2's isolated neurons are its cleanest; TinyLlama's are its most mixed -- the effect reverses between architectures.</figcaption>
+</figure>
+```
+
+
+Gemma-2 showing the lone sub-threshold positive is exactly the pattern to expect:
+across this whole line of work Gemma-2 is repeatedly the most weight-legible
+model, so a whiff of structure-to-function signal there, and nowhere else, reads
+as a property of Gemma rather than of transformers. It was pre-registered as not
+counting.
+
+## A null is only as good as the instrument behind it
+
+The obvious attack on any negative result: maybe the pipeline could not detect
+the effect even if it existed -- maybe five coarse regimes cannot resolve real
+polysemanticity. That objection is answerable in-house, and cheaply, with two toy
+systems.
+
+::: {.callout-important}
+## Positive control: pass, both flanks
+**Detection.** On synthetic data with a graded crowding->mixing law planted by construction, the *identical* statistic recovers it at partial $\rho$ **+0.52** (density) / **+0.63** (top-10), while the same test on label-shuffled data stays at q95 $|\rho|$ 0.094 -- inside the null band.
+
+**Proxy validity.** In a trained Toy-Models-style autoencoder where each neuron's true feature composition is known, the coarse five-regime entropy tracks ground-truth mixing at $\rho$ **+0.83**. The measure sees mixing; the pipeline sees the law when the law is there.
+:::
+
+| quantity | value | bar | reading |
+|---|---|---|---|
+| real census, write (best family) | +0.05 | -- | the null |
+| planted law, density | +0.52 | $\geq$ +0.15 | detected, 3--4$\times$ over floor |
+| planted law, top-10 | +0.63 | agrees in sign | detected |
+| planted law, labels shuffled (q95) | 0.094 | < 0.10 | no false positive |
+| census entropy vs ground-truth mixing | +0.83 | -- | proxy is faithful |
+
+: The real-model numbers sit an order of magnitude below what the same instrument returns when the law is real. {tbl-colwidths="[46,14,18,22]"}
+
+::: {.callout-note}
+## An artifact worth naming
+The first planted control used a clean two-group split (isolated vs crowded), which made the crowding variable perfectly bimodal. Pushed through the rank-residualisation, a near-binary regressor inflated the permutation null to q95 $\approx 0.16$ -- which would have made the instrument look *less* sensitive than it is. The fix was to regrade the planted data to a continuous crowding level matching the real census's density spread; the null fell back to $\approx 0.04$ and the detection signal was unchanged (bimodal $+0.83$, graded $+0.52$). The regrade fixed the *null estimate*, not the *signal* -- the kind of thing a control has to get right, and the kind of thing that is only visible if you keep both runs.
+:::
+
+::: {.callout-note}
+## The mechanistic "why," seen in a toy
+The trained autoencoder carries feature-level superposition by construction -- 2560 sparse features in 512 neurons, 5$\times$ compression, dense packing, clean reconstruction. Yet its neuron write-columns barely crowd at all: the maximum pairwise $|\cos|$ across the whole layer is **0.15**. Here is a minimal system where superposition is present and heavy, and it still does not imprint as neuron-level geometric crowding -- because features and neurons are simply different objects. That is the decoupling shown where you can see both levels at once.
+:::
+
+## What this does and does not say
+
+This is a claim about **neurons**, not features. Superposition theory is
+fundamentally about features as linear combinations of neurons; an SAE feature
+can be crowded and polysemantic in ways no single neuron reveals. Nothing here
+refutes feature-level superposition. What it bounds is the *neuron-granularity
+shortcut* -- the hope that you could read polysemanticity off raw weight geometry
+without a dictionary. You cannot, on either interface, in any of four families.
+
+It is also a claim about **task-regime** mixing (five coarse classes), not
+fine-grained semantic mixing, and about **MLP** geometry, not attention. Within
+those bounds it is as airtight as I could make it: pre-registered thresholds,
+both faces of the neuron, four architectures, a positive control at 3--4$\times$
+the detection floor, and a demonstrated-faithful mixing proxy.
+
+Which neurons mix regimes is set by the statistics of the data a model was
+trained on, not by the geometric necessity of packing. The ledger of a model's
+capacity has to be *read from usage*; it is not sitting latent in the Gram matrix
+of its weights.
+
+This is the negative half of a longer weights-first program. Where the
+[earlier](../weight-space-map-of-attention-heads/)
+[notes](../correcting-the-weight-space-map/) mapped what weight geometry *does*
+know, this one marks a firm boundary on what it does not.
