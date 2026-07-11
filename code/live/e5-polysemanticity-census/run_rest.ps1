@@ -1,0 +1,1 @@
+﻿Set-Location C:\Users\shubh\Downloads\s2path; $py=".venv\Scripts\python.exe"; foreach ($m in @("gemma-2-2b","pythia-1.4b")) { & $py e5-polysemanticity-census\src\census.py --model $m; & $py e5-polysemanticity-census\src\stats_e5.py --model $m; Write-Output "=== e5 $m exit $LASTEXITCODE ===" }; Write-Output "E5 DONE"
