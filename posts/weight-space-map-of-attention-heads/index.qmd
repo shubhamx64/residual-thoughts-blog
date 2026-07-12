@@ -7,6 +7,11 @@ date-modified: "2026-06-14"
 categories: [mechanistic-interpretability, gemma-2, sae, attention-heads]
 description: "Can we learn something useful about attention heads without sampling new activations? This post uses Gemma-2 2B and Gemma Scope residual-stream SAEs to build a weight-space map of routing and writing behavior."
 image: figs/hero.png
+open-graph:
+  image: figs/og.png
+twitter-card:
+  image: figs/og.png
+  card-style: summary_large_image
 toc-depth: 3
 ---
 

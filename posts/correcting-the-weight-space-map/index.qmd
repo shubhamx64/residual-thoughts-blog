@@ -6,6 +6,11 @@ date: "2026-06-14"
 categories: [mechanistic-interpretability, gemma-2, sae, attention-heads, errata]
 description: "A short follow-up: three pipeline bugs (gamma folding, RoPE pairing, SAE encoding) invalidated the late-layer 'anti-predictive regime,' and what the corrected map plus two new studies actually show."
 image: figs/hero.png
+open-graph:
+  image: figs/og.png
+twitter-card:
+  image: figs/og.png
+  card-style: summary_large_image
 toc-depth: 3
 ---
 

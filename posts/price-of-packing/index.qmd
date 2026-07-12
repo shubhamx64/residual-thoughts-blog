@@ -4,6 +4,7 @@ subtitle: "A four-family, two-interface, pre-registered null -- with a positive 
 author: "Shubham Srivastava"
 date: "2026-07-05"
 categories: [mechanistic-interpretability, superposition, polysemanticity, mlp-neurons, negative-results]
+image: figs/og.png
 description: "Superposition has a folk corollary: the neurons that mix meanings should be the ones whose weight vectors crowd together. Tested dictionary-free on both faces of the MLP across four model families, it is false at neuron granularity -- and a planted-law control shows the pipeline would have caught it if it were true."
 toc-depth: 3
 ---

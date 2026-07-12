@@ -13,8 +13,11 @@ website:
     left:
       - text: "About"
         href: about.qmd
-  open-graph: true
-  twitter-card: true
+  open-graph:
+    image: og_default.png
+  twitter-card:
+    image: og_default.png
+    card-style: summary_large_image
   page-footer:
     left: "&copy; 2025–2026 Residual Thoughts"
     center: "Notes on mechanistic interpretability, geometry, and model behavior."
