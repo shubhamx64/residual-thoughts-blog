@@ -3,6 +3,8 @@
   render:
     - "**/*.qmd"
     - "!code/"
+  resources:
+    - "!tools/"
 
 website:
   title: "Residual Thoughts"
