@@ -10,6 +10,8 @@ image: figs/hero.png
 toc-depth: 3
 ---
 
+[partially retracted → corrected]{.post-stamp .red} [see the [errata post](../correcting-the-weight-space-map/) (2026-06-14)]{.post-stamp .pencil}
+
 This post uses model weights plus a fixed SAE feature basis to map what
 kinds of routing and writing patterns are available inside Gemma-2
 attention heads. The emphasis is on *available linear structure* in a

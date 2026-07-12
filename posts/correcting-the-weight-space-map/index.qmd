@@ -9,6 +9,8 @@ image: figs/hero.png
 toc-depth: 3
 ---
 
+[errata]{.post-stamp .red} [corrects the [2026-03-22 map](../weight-space-map-of-attention-heads/)]{.post-stamp .pencil}
+
 The [first post](../weight-space-map-of-attention-heads/) built a weight-space
 map of Gemma-2-2B attention heads -- routing ($W_Q/W_K$), writing ($W_O/W_V$),
 and feature programs -- in a fixed SAE coordinate system, and validated those

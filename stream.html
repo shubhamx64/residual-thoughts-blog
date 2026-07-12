@@ -1,0 +1,60 @@
+<script>
+/* The Stream: reading progress flows down the residual stream.
+   - Post pages: fixed left rail whose gradient fill tracks scroll.
+   - Listing page: a pulse travels down the spine (CSS animation).
+   - Wordmark: "Thoughts" picks up the read→write gradient. */
+(function () {
+  function ready(fn) {
+    if (document.readyState !== 'loading') { fn(); }
+    else { document.addEventListener('DOMContentLoaded', fn); }
+  }
+
+  ready(function () {
+    var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    var brand = document.querySelector('.navbar-title');
+    if (brand && brand.textContent.trim() === 'Residual Thoughts') {
+      brand.innerHTML = 'Residual <span class="brand-grad">Thoughts</span>';
+    }
+
+    var listing = document.getElementById('listing-listing');
+    if (listing) {
+      var list = listing.querySelector('.quarto-listing-default');
+      if (list && !reduced) {
+        var pulse = document.createElement('span');
+        pulse.className = 'stream-pulse';
+        pulse.setAttribute('aria-hidden', 'true');
+        list.appendChild(pulse);
+      }
+      return;
+    }
+
+    if (!document.getElementById('quarto-document-content')) { return; }
+
+    var rail = document.createElement('div');
+    rail.className = 'stream-rail';
+    rail.setAttribute('aria-hidden', 'true');
+    var fill = document.createElement('div');
+    fill.className = 'stream-fill';
+    var dot = document.createElement('div');
+    dot.className = 'stream-dot';
+    fill.appendChild(dot);
+    rail.appendChild(fill);
+    document.body.appendChild(rail);
+
+    var ticking = false;
+    function update() {
+      var h = document.documentElement;
+      var max = h.scrollHeight - h.clientHeight;
+      var pct = max > 0 ? (h.scrollTop / max) * 100 : 0;
+      fill.style.height = pct.toFixed(2) + '%';
+      ticking = false;
+    }
+    document.addEventListener('scroll', function () {
+      if (!ticking) { ticking = true; window.requestAnimationFrame(update); }
+    }, { passive: true });
+    window.addEventListener('resize', update);
+    update();
+  });
+})();
+</script>

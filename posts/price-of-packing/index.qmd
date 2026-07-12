@@ -8,6 +8,8 @@ description: "Superposition has a folk corollary: the neurons that mix meanings 
 toc-depth: 3
 ---
 
+[pre-registered]{.post-stamp .green} [null result]{.post-stamp .green} [positive control passed]{.post-stamp .green}
+
 Superposition theory has a folk corollary that almost everyone reaches for at
 some point: the neurons that **mix meanings** ought to be the ones whose weight
 vectors **crowd together**, because crowding is what packing many features into
