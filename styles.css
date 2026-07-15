@@ -243,6 +243,20 @@ a:focus-visible {
   outline-offset: 3px;
 }
 
+@media (max-width: 991px) {
+  .navbar .quarto-navbar-tools {
+    margin-left: auto;
+  }
+
+  .navbar #quarto-search {
+    margin-left: 0.35rem;
+  }
+
+  .navbar .quarto-color-scheme-toggle {
+    margin-left: 0;
+  }
+}
+
 /* --- Footer --- */
 
 footer.footer {
