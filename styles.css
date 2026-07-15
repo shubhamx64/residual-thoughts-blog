@@ -170,74 +170,71 @@ a:focus-visible {
   text-decoration: none;
 }
 
-/* Quarto's native, persistent color-scheme control, restyled as a compact
-   sun/moon switch that belongs to the site's instrument-panel vocabulary. */
+/* Quarto's native, persistent color-scheme control. Only the active theme's
+   symbol is visible: sun for light, moon for dark. */
 .navbar .quarto-color-scheme-toggle {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 3.55rem;
-  height: 1.82rem;
+  width: 2.05rem;
+  height: 2.05rem;
   margin-left: 0.5rem;
   padding: 0 !important;
   border: 1px solid rgba(240, 236, 228, 0.24);
-  border-radius: 999px;
+  border-radius: 50%;
   background: rgba(255, 255, 255, 0.06);
   color: #C8C4BC;
   text-decoration: none;
   overflow: hidden;
-  transition: border-color 0.2s ease, background-color 0.2s ease;
+  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
 }
 
 .navbar .quarto-color-scheme-toggle::before,
 .navbar .quarto-color-scheme-toggle::after {
   position: absolute;
   top: 50%;
+  left: 50%;
   z-index: 2;
-  transform: translateY(-52%);
+  transform: translate(-50%, -52%) scale(1);
   font-family: Georgia, serif;
-  font-size: 0.82rem;
+  font-size: 1rem;
   line-height: 1;
+  opacity: 1;
   pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.24s ease;
 }
 
 .navbar .quarto-color-scheme-toggle::before {
-  content: "☀";
-  left: 0.5rem;
+  content: "\2600";
   color: #F2C76E;
 }
 
 .navbar .quarto-color-scheme-toggle::after {
-  content: "☾";
-  right: 0.51rem;
+  content: "\263E";
   color: #C4B9EF;
-  font-size: 0.95rem;
+  opacity: 0;
+  transform: translate(-50%, -52%) scale(0.65) rotate(-20deg);
 }
 
 .navbar .quarto-color-scheme-toggle .bi::before {
-  position: absolute;
-  top: 50%;
-  left: 0.2rem;
-  z-index: 1;
-  width: 1.38rem;
-  height: 1.38rem;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.16) !important;
-  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.26);
-  content: "";
-  transform: translateY(-50%);
-  transition: left 0.24s ease, background-color 0.24s ease;
+  display: none !important;
 }
 
-.navbar .quarto-color-scheme-toggle.alternate .bi::before {
-  left: 1.9rem;
-  background: rgba(172, 155, 226, 0.2) !important;
+.navbar .quarto-color-scheme-toggle.alternate::before {
+  opacity: 0;
+  transform: translate(-50%, -52%) scale(0.65) rotate(20deg);
+}
+
+.navbar .quarto-color-scheme-toggle.alternate::after {
+  opacity: 1;
+  transform: translate(-50%, -52%) scale(1) rotate(0);
 }
 
 .navbar .quarto-color-scheme-toggle:hover {
   border-color: rgba(240, 236, 228, 0.48);
   background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
   text-decoration: none;
 }
 
@@ -940,7 +937,8 @@ body.quarto-dark .about-entity .about-link:hover {
 @media (prefers-reduced-motion: reduce) {
   body,
   .navbar .quarto-color-scheme-toggle,
-  .navbar .quarto-color-scheme-toggle .bi::before {
+  .navbar .quarto-color-scheme-toggle::before,
+  .navbar .quarto-color-scheme-toggle::after {
     transition: none;
   }
 }
