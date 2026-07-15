@@ -17,6 +17,21 @@
       brand.innerHTML = 'Residual <span class="brand-grad">Thoughts</span>';
     }
 
+    var themeToggle = document.querySelector('.quarto-color-scheme-toggle');
+    function updateThemeToggleLabel() {
+      if (!themeToggle) { return; }
+      var dark = document.body.classList.contains('quarto-dark');
+      var label = dark ? 'Switch to light mode' : 'Switch to dark mode';
+      themeToggle.setAttribute('aria-label', label);
+      themeToggle.setAttribute('title', label);
+    }
+    if (themeToggle) {
+      updateThemeToggleLabel();
+      themeToggle.addEventListener('click', function () {
+        window.setTimeout(updateThemeToggleLabel, 0);
+      });
+    }
+
     var listing = document.getElementById('listing-listing');
     if (listing) {
       var list = listing.querySelector('.quarto-listing-default');

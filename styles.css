@@ -23,6 +23,21 @@
   --mono: 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
 }
 
+body.quarto-dark {
+  --paper: #101218;
+  --paper-raise: #191C25;
+  --ink: #F3EFE7;
+  --body-ink: #D5D1C9;
+  --pencil: #9B9AA0;
+  --hairline: #2C313D;
+  --read: #68C8BC;
+  --read-deep: #91DED5;
+  --write: #AC9BE2;
+  --red-ink: #F27D71;
+  --green-ink: #86BF8E;
+  color-scheme: dark;
+}
+
 /* --- Global & Typography --- */
 
 html {
@@ -38,6 +53,7 @@ body {
   background-color: var(--paper);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 h1, h2, h3, h4, h5, h6,
@@ -71,6 +87,11 @@ li { margin-bottom: 0.3rem; }
 
 ::selection {
   background-color: #D8EAE6;
+  color: var(--ink);
+}
+
+body.quarto-dark ::selection {
+  background-color: #274844;
   color: var(--ink);
 }
 
@@ -147,6 +168,82 @@ a:focus-visible {
 .navbar .nav-link.active {
   color: #FFFFFF !important;
   text-decoration: none;
+}
+
+/* Quarto's native, persistent color-scheme control, restyled as a compact
+   sun/moon switch that belongs to the site's instrument-panel vocabulary. */
+.navbar .quarto-color-scheme-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.55rem;
+  height: 1.82rem;
+  margin-left: 0.5rem;
+  padding: 0 !important;
+  border: 1px solid rgba(240, 236, 228, 0.24);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #C8C4BC;
+  text-decoration: none;
+  overflow: hidden;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.navbar .quarto-color-scheme-toggle::before,
+.navbar .quarto-color-scheme-toggle::after {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  transform: translateY(-52%);
+  font-family: Georgia, serif;
+  font-size: 0.82rem;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.navbar .quarto-color-scheme-toggle::before {
+  content: "☀";
+  left: 0.5rem;
+  color: #F2C76E;
+}
+
+.navbar .quarto-color-scheme-toggle::after {
+  content: "☾";
+  right: 0.51rem;
+  color: #C4B9EF;
+  font-size: 0.95rem;
+}
+
+.navbar .quarto-color-scheme-toggle .bi::before {
+  position: absolute;
+  top: 50%;
+  left: 0.2rem;
+  z-index: 1;
+  width: 1.38rem;
+  height: 1.38rem;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16) !important;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.26);
+  content: "";
+  transform: translateY(-50%);
+  transition: left 0.24s ease, background-color 0.24s ease;
+}
+
+.navbar .quarto-color-scheme-toggle.alternate .bi::before {
+  left: 1.9rem;
+  background: rgba(172, 155, 226, 0.2) !important;
+}
+
+.navbar .quarto-color-scheme-toggle:hover {
+  border-color: rgba(240, 236, 228, 0.48);
+  background: rgba(255, 255, 255, 0.1);
+  text-decoration: none;
+}
+
+.navbar .quarto-color-scheme-toggle:focus-visible {
+  outline: 2px solid #A695DB;
+  outline-offset: 3px;
 }
 
 /* --- Footer --- */
@@ -760,6 +857,93 @@ blockquote {
 }
 
 blockquote p:last-child { margin-bottom: 0; }
+
+/* --- Dark mode surfaces --- */
+
+body.quarto-dark .navbar,
+body.quarto-dark footer.footer {
+  background-color: #0A0C11 !important;
+}
+
+body.quarto-dark .stream-rail {
+  background: #20242E;
+}
+
+body.quarto-dark .quarto-float .figure-img,
+body.quarto-dark .quarto-figure .figure-img {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.32);
+}
+
+body.quarto-dark div.callout-note.callout {
+  background-color: rgba(104, 200, 188, 0.08);
+}
+
+body.quarto-dark div.callout-note.callout-style-default > .callout-header {
+  background-color: rgba(104, 200, 188, 0.14);
+}
+
+body.quarto-dark div.callout-tip.callout {
+  background-color: rgba(134, 191, 142, 0.08);
+}
+
+body.quarto-dark div.callout-tip.callout-style-default > .callout-header {
+  background-color: rgba(134, 191, 142, 0.14);
+}
+
+body.quarto-dark div.callout-warning.callout {
+  background-color: rgba(242, 199, 110, 0.08);
+}
+
+body.quarto-dark div.callout-warning.callout-style-default > .callout-header {
+  background-color: rgba(242, 199, 110, 0.14);
+  color: #F2C76E;
+}
+
+body.quarto-dark div.callout-important.callout {
+  background-color: rgba(242, 125, 113, 0.08);
+}
+
+body.quarto-dark div.callout-important.callout-style-default > .callout-header {
+  background-color: rgba(242, 125, 113, 0.14);
+}
+
+body.quarto-dark .table thead th {
+  background-color: #0A0C11;
+  color: #F0ECE4;
+  border-bottom-color: #0A0C11;
+}
+
+body.quarto-dark .table tbody tr:nth-child(even),
+body.quarto-dark pre,
+body.quarto-dark blockquote {
+  background-color: #171A22;
+}
+
+body.quarto-dark blockquote {
+  color: #C3BFB7;
+}
+
+body.quarto-dark .code-copy-button {
+  color: var(--body-ink);
+}
+
+body.quarto-dark .about-entity .about-link {
+  color: var(--body-ink);
+  border-color: var(--hairline);
+}
+
+body.quarto-dark .about-entity .about-link:hover {
+  color: var(--ink);
+  border-color: var(--read);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body,
+  .navbar .quarto-color-scheme-toggle,
+  .navbar .quarto-color-scheme-toggle .bi::before {
+    transition: none;
+  }
+}
 
 /* --- Section Spacing --- */
 
