@@ -687,6 +687,25 @@ figcaption {
   margin-top: 0.4rem;
 }
 
+/* Theme-paired raster plots. Text baked into a PNG cannot follow Quarto's
+   JavaScript theme toggle, so each plot is rendered against both paper colors. */
+.theme-figure {
+  margin: 2rem auto;
+  max-width: 95%;
+}
+
+.theme-plot {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+.theme-plot-dark { display: none; }
+
+body.quarto-dark .theme-plot-light { display: none; }
+body.quarto-dark .theme-plot-dark { display: block; }
+
 /* --- Tables --- */
 
 .table {
