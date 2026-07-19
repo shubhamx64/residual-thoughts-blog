@@ -266,4 +266,5 @@ execution-mode-matched footprint. Escalate to gradients only when the decision i
 important enough to pay for them.
 
 Why crowding helps at all remains open. Paper 1 narrows the possibilities; it does
-not settle the mechanism. That question belongs to Paper 2, and to a later post.
+not settle the mechanism. That question belongs to Paper 2, and to
+[a later post](../why-crowding-protects/).
