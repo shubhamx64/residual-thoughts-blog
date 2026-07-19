@@ -102,9 +102,9 @@ def build_weight_masks():
     print(f"weight masks written to {OUT} (budget {BUDGET:.0%} = {k}/{INTER}/layer)", flush=True)
 
 
-def build_fisher_mask():
+def build_fisher_mask(ckpt_path=None, train_file=None, out_path=None):
     from transformers import AutoModelForCausalLM, AutoTokenizer
-    ckpt = ROOT / "results" / "ckpt_A_qwen.pt"
+    ckpt = Path(ckpt_path) if ckpt_path else ROOT / "results" / "ckpt_A_qwen.pt"
     assert ckpt.exists(), f"need {ckpt}; run phase A first"
     tok = AutoTokenizer.from_pretrained(MODEL_ID)
     model = AutoModelForCausalLM.from_pretrained(MODEL_ID, dtype=torch.bfloat16).to(DEV)
@@ -114,7 +114,8 @@ def build_fisher_mask():
         p.requires_grad_(".mlp." in n)
     model.gradient_checkpointing_enable()
     model.enable_input_require_grads()
-    with open(ROOT / "data" / "train_A_math.jsonl", encoding="utf-8") as f:
+    train_path = Path(train_file) if train_file else ROOT / "data" / "train_A_math.jsonl"
+    with open(train_path, encoding="utf-8") as f:
         texts = [json.loads(l)["text"] for l in f][:FISHER_SEQS]
 
     acc = [torch.zeros(INTER, dtype=torch.float64, device=DEV) for _ in range(N_LAYERS)]
@@ -134,15 +135,20 @@ def build_fisher_mask():
     ms = [topk_mask(a.cpu().numpy() / len(texts), k) for a in acc]
     zj = np.load(OUT / "mask_join.npz")
     ov = np.mean([(ms[l] & zj[f"L{l}"]).sum() / k for l in range(N_LAYERS)])
-    np.savez(OUT / "mask_fisher.npz", **{f"L{l}": m for l, m in enumerate(ms)})
-    print(f"fisher mask written (overlap with join {ov:.2f})", flush=True)
+    output = Path(out_path) if out_path else OUT / "mask_fisher.npz"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(output, **{f"L{l}": m for l, m in enumerate(ms)})
+    print(f"fisher mask written to {output} (overlap with join {ov:.2f})", flush=True)
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--fisher", action="store_true", help="build fisher mask (needs ckpt_A_qwen)")
+    ap.add_argument("--ckpt", default=None, help="after-A checkpoint override")
+    ap.add_argument("--train-file", default=None, help="task-A Fisher corpus override")
+    ap.add_argument("--out", default=None, help="Fisher mask output path override")
     args = ap.parse_args()
     if args.fisher:
-        build_fisher_mask()
+        build_fisher_mask(args.ckpt, args.train_file, args.out)
     else:
         build_weight_masks()

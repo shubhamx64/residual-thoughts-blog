@@ -43,7 +43,7 @@ being prepared. It emphasizes the operational picture rather than reproducing
 the paper section by section.
 
 ::: {.callout-note appearance="simple"}
-[**Code snapshot**](https://github.com/shubhamx64/residual-thoughts-blog/tree/main/code/live) — the footprint capture, weight-geometry, co-use, sequential-update, census, and quantization pipelines. The research mirror deliberately excludes Paper 2's mechanism work; this post is Paper 1 only.
+[**Code snapshot**](https://github.com/shubhamx64/residual-thoughts-blog/tree/main/code/live) — the footprint capture, weight-geometry, co-use, sequential-update, census, and quantization pipelines. The mirror now also carries [Paper 2's mechanism code](../why-crowding-protects/); this post is Paper 1 only.
 :::
 
 ::: {.callout-tip}

@@ -6,9 +6,13 @@ structure preserved. Excluded by design: data, model weights, checkpoints (`.pt`
 captures (`.npz`), figures, virtualenvs, caches, and result/pre-registration notes.
 
 Scope of this mirror: the published Gemma-2 attention weight-space map, the
-polysemanticity/regime-mixing census, and the Paper 1 capacity-ledger code
+polysemanticity/regime-mixing census, the Paper 1 capacity-ledger code
 (footprints, packing, reader sufficiency, continual-learning protection, and
-quantization). Paper 2's mechanism study (why crowding protects) is intentionally
-held back until its write-up is out.
+quantization), and the Paper 2 mechanism study in `e5-mechanism/` (GGN pairwise
+curvature probes and sketches, the K2 selector, interface decomposition,
+isolation controls, rollback surgery, and the reparameterization self-test),
+together with the refreshed `e4-continual/` training and analysis code it
+builds on. Preregistration documents and result artifacts ship with the Paper 2
+manuscript rather than this mirror.
 
 Refresh by re-copying source from the parent repo.

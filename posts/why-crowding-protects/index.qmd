@@ -41,8 +41,14 @@ rebuilds the setup from scratch.
 ::: {.callout-note appearance="simple"}
 **Code and provenance.** Every experiment here was preregistered before
 running, with amendments dated and disclosed, on a frozen git history with a
-SHA256 manifest of all result artifacts. The mechanism code ships with the
-Paper 2 manuscript, which is in preparation; this post reports the findings.
+SHA256 manifest of all result artifacts.
+[**The mechanism code is public**](https://github.com/shubhamx64/residual-thoughts-blog/tree/main/code/live/e5-mechanism):
+the curvature probes and sketches, the K2 selector, the interface
+decomposition, both isolation controls, the rollback surgery, and the
+reparameterization self-test, alongside the
+[training and analysis code](https://github.com/shubhamx64/residual-thoughts-blog/tree/main/code/live/e4-continual)
+they build on. The preregistration trail and result artifacts ship with the
+Paper 2 manuscript, which is in preparation.
 :::
 
 ::: {.callout-tip}

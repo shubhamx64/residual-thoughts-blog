@@ -15,6 +15,7 @@ drift (1 - cos of pooled q99 firing-frequency vector vs the after-A reference).
 import argparse
 import json
 import math
+import os
 import sys
 import time
 from pathlib import Path
@@ -30,6 +31,8 @@ sys.path.insert(0, str(BASE / "e1-footprint-stability" / "src"))
 MODELS = {
     "tinyllama-1.1b": "TinyLlama/TinyLlama_v1.1",
     "qwen2.5-1.5b": "Qwen/Qwen2.5-1.5B",
+    "qwen2.5-3b": "Qwen/Qwen2.5-3B",
+    "qwen2.5-7b": "Qwen/Qwen2.5-7B",
 }
 MODEL_ID = "TinyLlama/TinyLlama_v1.1"
 MODEL_KEY = "tinyllama-1.1b"
@@ -109,6 +112,10 @@ def main():
     ap.add_argument("--arm", default="baseline")
     ap.add_argument("--init", default=None, help="checkpoint .pt of MLP params to load")
     ap.add_argument("--steps", type=int, default=None)
+    ap.add_argument("--lr", type=float, default=LR,
+                    help="optimizer learning rate (default preserves original protocol)")
+    ap.add_argument("--eval-every", type=int, default=EVAL_EVERY,
+                    help="evaluation interval in optimizer steps")
     ap.add_argument("--tag-suffix", default="")
     ap.add_argument("--train-file", default=None, help="override training jsonl")
     ap.add_argument("--probe-class", default="math", help="footprint-drift probe eval class")
@@ -117,9 +124,22 @@ def main():
                     help="model key (default preserves TinyLlama)")
     ap.add_argument("--seed", type=int, default=SEED,
                     help="seed for phase-B data order (default 0 preserves original)")
+    ap.add_argument("--mask-scope", default="all",
+                    choices=["all", "down", "gate", "up", "read"],
+                    help="which MLP matrices the protection mask zeroes (E-M2)")
+    ap.add_argument("--eval-split-file", default=None,
+                    help="extra eval jsonl logged as nll_split/ppl_split each eval")
+    ap.add_argument("--save-ckpt", action="store_true",
+                    help="also save the phase-B checkpoint")
+    ap.add_argument("--select-best-split", action="store_true",
+                    help="for phase A, save the checkpoint with lowest nll_split")
+    ap.add_argument("--ckpt-name", default=None,
+                    help="checkpoint filename override, relative to E4_CKPT_DIR/results")
     args = ap.parse_args()
     if args.steps:
         STEPS[args.phase] = args.steps
+    if args.select_best_split and (args.phase != "A" or not args.eval_split_file):
+        ap.error("--select-best-split requires phase A and --eval-split-file")
     seed = args.seed
     torch.manual_seed(seed)
 
@@ -145,10 +165,15 @@ def main():
         print(f"loaded init {args.init} (missing keys ok: {len(missing.missing_keys)})", flush=True)
 
     masks = None
+    mask_indices = None
     if args.phase == "B" and args.arm != "baseline":
         mask_path = args.mask_file or (ROOT / "data" / f"mask_{args.arm}.npz")
         z = np.load(mask_path)
         masks = {int(k[1:]): torch.tensor(z[k], device=DEV) for k in z.files}
+        # index_fill_ is numerically equivalent to boolean advanced-index
+        # assignment here and substantially cheaper for repeated large-matrix
+        # gradient masking.
+        mask_indices = {l: torch.where(m)[0] for l, m in masks.items()}
         print(f"arm {args.arm}: protecting {int(masks[0].sum())} neurons/layer "
               f"({mask_path})", flush=True)
 
@@ -156,10 +181,12 @@ def main():
         "train_A_math.jsonl" if args.phase == "A" else "train_B_code.jsonl")
     train_texts = load_jsonl(ROOT / "data" / train_file)
     evals = {c: load_jsonl(ROOT / "data" / f"eval_{c}.jsonl") for c in ("math", "code", "prose")}
+    split_texts = load_jsonl(args.eval_split_file) if args.eval_split_file else None
     thresholds = np.load(BASE / "e1-footprint-stability" / "results" / model_key /
                          "thresholds.npz")["q99.0"]
 
-    opt = torch.optim.AdamW([p for p in mlp_params.values()], lr=LR, weight_decay=0.0)
+    opt = torch.optim.AdamW([p for p in mlp_params.values()], lr=args.lr, weight_decay=0.0,
+                            foreach=False)  # lower peak memory; numerically identical
     steps = STEPS[args.phase]
     tag = (f"{args.phase}_{args.arm}" if args.phase == "B" else "A") + args.tag_suffix
     out_dir = ROOT / "results"
@@ -171,12 +198,22 @@ def main():
     ref_fp = None
     if args.phase == "B":
         ref_fp = math_footprint(model, tok, probe_texts, thresholds)
+    best_split = {"nll": float("inf"), "step": None, "state": None}
 
     def evaluate(step):
         row = {"step": step,
                "ppl_math": eval_ppl(model, tok, evals["math"]),
                "ppl_code": eval_ppl(model, tok, evals["code"]),
                "ppl_prose": eval_ppl(model, tok, evals["prose"])}
+        if split_texts is not None:
+            row["ppl_split"] = eval_ppl(model, tok, split_texts)
+            row["nll_split"] = math.log(row["ppl_split"])
+            if args.select_best_split and row["nll_split"] < best_split["nll"]:
+                best_split["nll"] = row["nll_split"]
+                best_split["step"] = step
+                best_split["state"] = {
+                    k: v.detach().cpu().clone() for k, v in mlp_params.items()
+                }
         if ref_fp is not None:
             row["fp_drift"] = drift(math_footprint(model, tok, probe_texts, thresholds), ref_fp)
         log.write(json.dumps(row) + "\n")
@@ -199,21 +236,43 @@ def main():
             if masks is not None:
                 for l, m in masks.items():
                     pref = f"model.layers.{l}.mlp."
-                    mlp_params[pref + "down_proj.weight"].grad[:, m] = 0
-                    mlp_params[pref + "gate_proj.weight"].grad[m, :] = 0
-                    mlp_params[pref + "up_proj.weight"].grad[m, :] = 0
+                    idx = mask_indices[l]
+                    if args.mask_scope in ("all", "down"):
+                        mlp_params[pref + "down_proj.weight"].grad.index_fill_(1, idx, 0)
+                    if args.mask_scope in ("all", "read", "gate"):
+                        mlp_params[pref + "gate_proj.weight"].grad.index_fill_(0, idx, 0)
+                    if args.mask_scope in ("all", "read", "up"):
+                        mlp_params[pref + "up_proj.weight"].grad.index_fill_(0, idx, 0)
             torch.nn.utils.clip_grad_norm_(list(mlp_params.values()), 1.0)
             opt.step()
             opt.zero_grad(set_to_none=True)
-            if step % EVAL_EVERY == 0:
+            if step % args.eval_every == 0:
                 evaluate(step)
                 rate = step / (time.time() - t0)
                 print(f"  ({rate*60:.0f} steps/min)", flush=True)
 
-    ck = out_dir / f"ckpt_{tag}.pt"
-    torch.save({k: v.detach().cpu() for k, v in mlp_params.items()}, ck)
+    # Only phase A needs a checkpoint by default (it seeds every phase-B arm).
+    # Phase-B checkpoints are skipped unless --save-ckpt (e.g. for rollback
+    # experiments that splice against the after-B state).
+    if args.phase == "A" or args.save_ckpt:
+        # Big checkpoints go to E4_CKPT_DIR (a reliable local disk) if set; the
+        # network volume corrupts large single-file writes. Logs stay on the volume.
+        ckpt_dir = Path(os.environ.get("E4_CKPT_DIR", str(out_dir)))
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
+        ck = ckpt_dir / (args.ckpt_name or f"ckpt_{tag}.pt")
+        state = best_split["state"] if args.select_best_split else {
+            k: v.detach().cpu() for k, v in mlp_params.items()
+        }
+        torch.save(state, ck)
+        print(f"saved {ck}", flush=True)
+        if args.select_best_split:
+            meta = {"best_step": best_split["step"], "best_nll_split": best_split["nll"],
+                    "lr": args.lr, "max_steps": steps, "eval_every": args.eval_every}
+            with open(ck.with_suffix(ck.suffix + ".meta.json"), "w", encoding="utf-8") as f:
+                json.dump(meta, f, indent=2)
+            print(f"selected validation-best step {best_split['step']} "
+                  f"(nll_split={best_split['nll']:.6f})", flush=True)
     log.close()
-    print(f"saved {ck}", flush=True)
 
 
 if __name__ == "__main__":
