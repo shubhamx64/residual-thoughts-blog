@@ -5,6 +5,9 @@ listing:
   sort: "date desc"
   type: default
   fields: [image, title, description, date, categories, reading-time]
+  feed:
+    type: full
+    items: 20
 ---
 
 Notes on mechanistic interpretability, geometry, and model behavior.

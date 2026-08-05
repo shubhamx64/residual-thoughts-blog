@@ -5,6 +5,8 @@
     - "!code/"
   resources:
     - "!tools/"
+  post-render:
+    - python tools/seo_post_render.py
 
 website:
   title: "Residual Thoughts"
@@ -34,6 +36,9 @@ website:
 
 format:
   html:
+    # Tell crawlers which URL is authoritative when GitHub Pages serves both
+    # /path/ and /path/index.html for the same document.
+    canonical-url: true
     theme:
       light: cosmo
       dark: darkly
